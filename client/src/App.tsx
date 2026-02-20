@@ -6,14 +6,16 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Dashboard from "./pages/Dashboard";
 import ContainerDetail from "./pages/ContainerDetail";
-import MAInvoices from "./pages/MAInvoices";
+import LumperInvoices from "./pages/LumperInvoices";
+import DrayageInvoices from "./pages/DrayageInvoices";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/container/:id" component={ContainerDetail} />
-      <Route path="/ma-invoices" component={MAInvoices} />
+      <Route path="/lumper-invoices" component={LumperInvoices} />
+      <Route path="/drayage-invoices" component={DrayageInvoices} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

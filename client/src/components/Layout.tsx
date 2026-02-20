@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import {
   Package, BarChart3, FileText, Home,
-  ChevronRight, Truck
+  ChevronRight, Truck, HardHat
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Home },
-  { href: "/ma-invoices", label: "M&A Invoices", icon: Truck },
+  { href: "/lumper-invoices", label: "Lumper Invoices", icon: HardHat },
+  { href: "/drayage-invoices", label: "Drayage Invoices", icon: Truck },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

@@ -1,345 +1,303 @@
-import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { allContainers, getStats, type Container } from "@/data/containers";
+/*
+ * Design: Industrial Logistics — Peach/Orange branding, slate sidebar
+ * Dense data table, monospace financials, color-coded statuses
+ */
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
+import { allContainers, RATES, type Container } from "@/data/containers";
+import { getLumperSummary } from "@/data/lumperInvoices";
+import Layout from "@/components/Layout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
-  Package, DollarSign, TrendingUp, TrendingDown, BarChart3,
-  Search, Truck, Clock, CheckCircle2, AlertTriangle
+  Package, TrendingUp, TrendingDown, BarChart3,
+  Truck, Clock, Search, ArrowUpRight
 } from "lucide-react";
 
-const fmt = (v: number) =>
-  v.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : fmt(n);
 
-const fmtShort = (v: number) => {
-  if (Math.abs(v) >= 1000) return `$${(v / 1000).toFixed(1)}k`;
-  return fmt(v);
-};
-
-function StatusPill({ status, type }: { status: string; type: string }) {
-  const colors: Record<string, string> = {
-    paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    payable: "bg-amber-100 text-amber-800 border-amber-200",
-    pending: "bg-slate-100 text-slate-600 border-slate-200",
-    no_drayage: "bg-slate-50 text-slate-400 border-slate-100",
-    completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    in_progress: "bg-blue-100 text-blue-800 border-blue-200",
-    waiting: "bg-amber-100 text-amber-800 border-amber-200",
-    not_required: "bg-slate-50 text-slate-400 border-slate-100",
-    invoiced: "bg-blue-100 text-blue-800 border-blue-200",
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    unloaded: "bg-emerald-100 text-emerald-800",
+    received: "bg-blue-100 text-blue-800",
+    in_transit: "bg-amber-100 text-amber-800",
+    pending: "bg-slate-100 text-slate-600",
+    projected: "bg-purple-100 text-purple-700",
   };
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${colors[status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>
-      {status.replace(/_/g, " ").toUpperCase()}
-    </span>
-  );
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{status.replace("_", " ")}</span>;
+}
+
+function BillingBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    billed: "bg-emerald-100 text-emerald-800",
+    pending: "bg-amber-100 text-amber-800",
+    unbilled: "bg-red-100 text-red-700",
+  };
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{status}</span>;
 }
 
 export default function Dashboard() {
-  const stats = getStats();
   const [search, setSearch] = useState("");
-  const [filterPeriod, setFilterPeriod] = useState("");
-  const [filterDrayage, setFilterDrayage] = useState("");
-  const [sortCol, setSortCol] = useState<string>("containerNumber");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [periodFilter, setPeriodFilter] = useState<string>("all");
+
+  const lumperSummary = useMemo(() => getLumperSummary(), []);
+
+  const stats = useMemo(() => {
+    const unloaded = allContainers.filter(c => c.status === "unloaded");
+    const totalRev = unloaded.reduce((s, c) => s + c.totalRevenue, 0);
+    const totalCost = unloaded.reduce((s, c) => s + c.totalCost, 0);
+    const inTransit = allContainers.filter(c => c.status === "in_transit").length;
+    const pending = allContainers.filter(c => c.status === "pending").length;
+    const projected = allContainers.filter(c => c.status === "projected").length;
+    return {
+      total: allContainers.length,
+      unloaded: unloaded.length,
+      inTransit,
+      pending,
+      projected,
+      totalRev,
+      totalCost,
+      margin: totalRev - totalCost,
+    };
+  }, []);
+
+  const periods = useMemo(() => Array.from(new Set(allContainers.map(c => c.period))), []);
 
   const filtered = useMemo(() => {
-    let list = [...allContainers];
-    if (search) {
-      const s = search.toUpperCase();
-      list = list.filter(c => c.containerNumber.includes(s) || c.poNumber.includes(s));
-    }
-    if (filterPeriod) list = list.filter(c => c.period === filterPeriod);
-    if (filterDrayage) list = list.filter(c => c.drayageStatus === filterDrayage);
-
-    list.sort((a, b) => {
-      const av = (a as any)[sortCol];
-      const bv = (b as any)[sortCol];
-      if (typeof av === "number" && typeof bv === "number") {
-        return sortDir === "asc" ? av - bv : bv - av;
-      }
-      return sortDir === "asc"
-        ? String(av).localeCompare(String(bv))
-        : String(bv).localeCompare(String(av));
+    return allContainers.filter(c => {
+      if (search && !c.containerNumber.toLowerCase().includes(search.toLowerCase()) && !c.po.toLowerCase().includes(search.toLowerCase())) return false;
+      if (statusFilter !== "all" && c.status !== statusFilter) return false;
+      if (periodFilter !== "all" && c.period !== periodFilter) return false;
+      return true;
     });
-    return list;
-  }, [search, filterPeriod, filterDrayage, sortCol, sortDir]);
-
-  const handleSort = (col: string) => {
-    if (sortCol === col) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortCol(col);
-      setSortDir("asc");
-    }
-  };
-
-  const SortHeader = ({ col, children, align }: { col: string; children: React.ReactNode; align?: string }) => (
-    <th
-      className={`p-2.5 font-semibold text-xs cursor-pointer hover:bg-slate-100 select-none ${align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"}`}
-      onClick={() => handleSort(col)}
-    >
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {sortCol === col && <span className="text-primary">{sortDir === "asc" ? "↑" : "↓"}</span>}
-      </span>
-    </th>
-  );
+  }, [search, statusFilter, periodFilter]);
 
   return (
     <Layout>
-      <div className="space-y-5">
+      <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Container Management</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Diamond Home — SC-144 Warehouse · 46 containers tracked
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Container Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">Diamond Home — SC-144 Warehouse · {allContainers.length} containers tracked</p>
         </div>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <Card className="border-l-4 border-l-primary">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <Package className="w-5 h-5 text-primary" />
-              </div>
-              <div className="text-xl font-bold font-financial">{stats.total}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Containers</div>
-            </CardContent>
-          </Card>
-
           <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <TrendingUp className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div className="text-xl font-bold font-financial text-emerald-700">{fmtShort(stats.totalRevenue)}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Revenue</div>
+            <CardContent className="p-4">
+              <Package className="w-5 h-5 text-emerald-600 mb-1" />
+              <div className="text-2xl font-bold font-mono">{stats.total}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Containers</div>
             </CardContent>
           </Card>
-
+          <Card className="border-l-4 border-l-green-500">
+            <CardContent className="p-4">
+              <TrendingUp className="w-5 h-5 text-green-600 mb-1" />
+              <div className="text-2xl font-bold font-mono text-green-700">{fmtK(stats.totalRev)}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Revenue</div>
+            </CardContent>
+          </Card>
           <Card className="border-l-4 border-l-red-500">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <TrendingDown className="w-5 h-5 text-red-600" />
-              </div>
-              <div className="text-xl font-bold font-financial text-red-700">{fmtShort(stats.totalCost)}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Total Costs</div>
+            <CardContent className="p-4">
+              <TrendingDown className="w-5 h-5 text-red-600 mb-1" />
+              <div className="text-2xl font-bold font-mono text-red-600">{fmtK(stats.totalCost)}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Costs</div>
             </CardContent>
           </Card>
-
           <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <BarChart3 className="w-5 h-5 text-blue-600" />
-              </div>
-              <div className={`text-xl font-bold font-financial ${stats.grossMargin >= 0 ? "text-blue-700" : "text-red-700"}`}>
-                {fmtShort(stats.grossMargin)}
-              </div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Gross Margin</div>
+            <CardContent className="p-4">
+              <BarChart3 className="w-5 h-5 text-blue-600 mb-1" />
+              <div className="text-2xl font-bold font-mono text-blue-700">{fmtK(stats.margin)}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Gross Margin</div>
             </CardContent>
           </Card>
-
           <Card className="border-l-4 border-l-amber-500">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <Clock className="w-5 h-5 text-amber-600" />
-              </div>
-              <div className="text-xl font-bold font-financial">{stats.waitingUnload}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Waiting Unload</div>
+            <CardContent className="p-4">
+              <Clock className="w-5 h-5 text-amber-600 mb-1" />
+              <div className="text-2xl font-bold font-mono">{stats.pending + stats.inTransit}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Awaiting Unload</div>
             </CardContent>
           </Card>
-
-          <Card className="border-l-4 border-l-slate-400">
-            <CardContent className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <Truck className="w-5 h-5 text-slate-600" />
-              </div>
-              <div className="text-xl font-bold font-financial">{stats.maPaid + stats.maPayable}</div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-wide">M&A Returned</div>
+          <Card className="border-l-4 border-l-purple-500">
+            <CardContent className="p-4">
+              <Truck className="w-5 h-5 text-purple-600 mb-1" />
+              <div className="text-2xl font-bold font-mono">{stats.projected}</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mar Projected</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Revenue/Cost Breakdown */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Revenue & Cost Breakdown */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <Card>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold text-emerald-700 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" /> Revenue Breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">IB Handling (46 × $550 min)</span><span className="font-financial font-medium">{fmt(stats.ibHandlingTotal)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Monthly Storage ($0.18/cuft)</span><span className="font-financial font-medium">{fmt(stats.storageTotal)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Drayage Pass-through ($495)</span><span className="font-financial font-medium">{fmt(allContainers.filter(c => c.drayageRevenue > 0).length * 495)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Chassis Revenue ($40/day)</span><span className="font-financial font-medium">{fmt(allContainers.reduce((s, c) => s + c.chassisRevenue, 0))}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Shrink Wrap ($2.50 × 20 pallets)</span><span className="font-financial font-medium">{fmt(allContainers.reduce((s, c) => s + c.palletRevenue, 0))}</span></div>
-                <div className="flex justify-between border-t pt-1.5 font-semibold"><span>Total Revenue</span><span className="font-financial text-emerald-700">{fmt(stats.totalRevenue)}</span></div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold text-red-700 flex items-center gap-2">
-                <TrendingDown className="w-4 h-4" /> Cost Breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">M&A Drayage ($425/container)</span><span className="font-financial font-medium">{fmt(allContainers.reduce((s, c) => s + c.maDrayageCost, 0))}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">M&A Chassis ($30/day)</span><span className="font-financial font-medium">{fmt(allContainers.reduce((s, c) => s + c.maChassisCost, 0))}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Fernando Unload ($260/container)</span><span className="font-financial font-medium">{fmt(stats.totalFernandoCost)}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Pallets ($4.50 × 20 est.)</span><span className="font-financial font-medium">{fmt(allContainers.reduce((s, c) => s + c.palletCost, 0))}</span></div>
-                <div className="flex justify-between border-t pt-1.5 font-semibold"><span>Total Costs</span><span className="font-financial text-red-700">{fmt(stats.totalCost)}</span></div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* M&A Invoice Quick View */}
-        <Card>
-          <CardHeader className="pb-2 pt-3 px-4">
-            <div className="flex items-center justify-between">
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Truck className="w-4 h-4" /> M&A Transport Invoices
+                <TrendingUp className="w-4 h-4 text-green-600" /> Revenue Breakdown (Unloaded)
               </CardTitle>
-              <Link href="/ma-invoices">
-                <span className="text-xs text-primary hover:underline cursor-pointer">View Details →</span>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="border rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm font-semibold">MA-020126</span>
-                  <StatusPill status="paid" type="billing" />
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {[
+                ["IB Handling ($550 min)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.handlingRevenue,0)],
+                ["Storage ($0.18/cuft)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.storageRevenue,0)],
+                ["Drayage Pass-through ($495)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.drayageRevenue,0)],
+                ["Chassis Revenue ($40/day)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.chassisRevenue,0)],
+                ["Shrink Wrap ($2.50/pallet)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.shrinkWrapRevenue,0)],
+              ].map(([label, val]) => (
+                <div key={label as string} className="flex justify-between">
+                  <span className="text-muted-foreground">{label as string}</span>
+                  <span className="font-mono font-medium">{fmt(val as number)}</span>
                 </div>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>12 containers · 61 chassis days</div>
-                  <div className="font-financial font-medium text-foreground">{fmt(6930)}</div>
-                </div>
+              ))}
+              <div className="border-t pt-2 flex justify-between font-semibold">
+                <span>Total Revenue</span>
+                <span className="font-mono text-green-700">{fmt(stats.totalRev)}</span>
               </div>
-              <div className="border rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm font-semibold">MA-20260204</span>
-                  <StatusPill status="payable" type="billing" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <TrendingDown className="w-4 h-4 text-red-600" /> Cost Breakdown (Unloaded)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {[
+                ["M&A Drayage ($425/container)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.maDrayageCost,0)],
+                ["M&A Chassis ($30/day)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.maChassisCost,0)],
+                ["Lumper (Fernando/Freddie)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.lumperCost,0)],
+                ["Pallets ($4.50/pallet)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.palletCost,0)],
+              ].map(([label, val]) => (
+                <div key={label as string} className="flex justify-between">
+                  <span className="text-muted-foreground">{label as string}</span>
+                  <span className="font-mono font-medium">{fmt(val as number)}</span>
                 </div>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>8 new returns · 19 chassis days</div>
-                  <div className="font-financial font-medium text-foreground">{fmt(3970)}</div>
-                </div>
+              ))}
+              <div className="border-t pt-2 flex justify-between font-semibold">
+                <span>Total Costs</span>
+                <span className="font-mono text-red-600">{fmt(stats.totalCost)}</span>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Lumper & Drayage Quick Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold">Fernando Palma — Lumper Invoices</CardTitle>
+                <Link href="/lumper-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View Details <ArrowUpRight className="w-3 h-3" /></span></Link>
+              </div>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">Total Paid</span><span className="font-mono font-medium text-emerald-700">{fmt(lumperSummary.totalPaid)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Amount Due</span><span className="font-mono font-medium text-red-600">{fmt(lumperSummary.totalDue)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total ({lumperSummary.totalContainers} containers)</span><span className="font-mono">{fmt(lumperSummary.totalAll)}</span></div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold">M&A Transport — Drayage Invoices</CardTitle>
+                <Link href="/drayage-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View Details <ArrowUpRight className="w-3 h-3" /></span></Link>
+              </div>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260201 (10 containers)</span><span className="font-mono font-medium text-emerald-700">$5,900.00 PAID</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260204 (8 containers)</span><span className="font-mono font-medium text-emerald-700">$3,970.00 PAID</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260217 (15+ containers)</span><span className="font-mono font-medium text-red-600">~$8,325.00 DUE</span></div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input placeholder="Search container # or PO..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+          </div>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="all">All Statuses</option>
+            <option value="unloaded">Unloaded</option>
+            <option value="received">Received</option>
+            <option value="in_transit">In Transit</option>
+            <option value="pending">Pending</option>
+            <option value="projected">Projected</option>
+          </select>
+          <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="all">All Periods</option>
+            {periods.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <span className="text-xs text-muted-foreground">{filtered.length} containers</span>
+        </div>
 
         {/* Container Table */}
-        <Card>
-          <CardHeader className="pb-2 pt-3 px-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <CardTitle className="text-sm font-semibold">All Containers ({filtered.length})</CardTitle>
-              <div className="flex gap-2 items-center">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search container #..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="pl-8 h-8 text-xs w-48"
-                  />
-                </div>
-                <select
-                  className="border rounded-md px-2 py-1.5 text-xs h-8 bg-background"
-                  value={filterPeriod}
-                  onChange={e => setFilterPeriod(e.target.value)}
-                >
-                  <option value="">All Periods</option>
-                  <option value="Week 1">Week 1</option>
-                  <option value="Week 2">Week 2</option>
-                  <option value="Week 3">Week 3</option>
-                </select>
-                <select
-                  className="border rounded-md px-2 py-1.5 text-xs h-8 bg-background"
-                  value={filterDrayage}
-                  onChange={e => setFilterDrayage(e.target.value)}
-                >
-                  <option value="">All Drayage</option>
-                  <option value="paid">Paid</option>
-                  <option value="payable">Payable</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
-            </div>
+        <div className="border rounded-lg overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-muted/50 text-left">
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Container</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">PO</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Period</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Status</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">ETA / Arrival</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Cartons</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Revenue</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Cost</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Margin</th>
+                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Billing</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {filtered.map(c => (
+                <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="px-3 py-2">
+                    <Link href={`/container/${c.containerNumber}`}>
+                      <span className="font-mono text-xs font-semibold text-primary hover:underline cursor-pointer">{c.containerNumber}</span>
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.po || "—"}</td>
+                  <td className="px-3 py-2 text-xs">{c.period}</td>
+                  <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
+                  <td className="px-3 py-2 text-xs font-mono text-muted-foreground">
+                    {c.status === "pending" || c.status === "in_transit" || c.status === "projected"
+                      ? (c.eta || "TBD")
+                      : (c.arrivalDate || "—")}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">{c.cartons > 0 ? c.cartons.toLocaleString() : "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-green-700">{c.totalRevenue > 0 ? fmt(c.totalRevenue) : "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-red-600">{c.totalCost > 0 ? fmt(c.totalCost) : "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs font-semibold">{c.grossMargin > 0 ? fmt(c.grossMargin) : "—"}</td>
+                  <td className="px-3 py-2"><BillingBadge status={c.billingStatus} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Rate Card Reference */}
+        <Card className="bg-muted/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rate Card Reference</CardTitle>
           </CardHeader>
-          <CardContent className="px-0 pb-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-y bg-muted/50">
-                    <SortHeader col="containerNumber">Container #</SortHeader>
-                    <SortHeader col="period">Period</SortHeader>
-                    <SortHeader col="totalCartons" align="right">Cartons</SortHeader>
-                    <SortHeader col="billableCuft" align="right">Bill. CuFt</SortHeader>
-                    <SortHeader col="carrier">Carrier</SortHeader>
-                    <SortHeader col="chassisDays" align="center">Chassis</SortHeader>
-                    <SortHeader col="totalRevenue" align="right">Revenue</SortHeader>
-                    <SortHeader col="totalCost" align="right">Cost</SortHeader>
-                    <SortHeader col="grossMargin" align="right">Margin</SortHeader>
-                    <th className="p-2.5 text-center text-xs font-semibold">Drayage</th>
-                    <th className="p-2.5 text-center text-xs font-semibold">Unload</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((c) => (
-                    <tr key={c.containerNumber} className="border-b hover:bg-muted/30 transition-colors">
-                      <td className="p-2.5">
-                        <Link href={`/container/${c.containerNumber}`}>
-                          <span className="font-mono font-semibold text-primary hover:underline cursor-pointer">
-                            {c.containerNumber}
-                          </span>
-                        </Link>
-                      </td>
-                      <td className="p-2.5">
-                        <span className="text-muted-foreground">{c.period}</span>
-                      </td>
-                      <td className="p-2.5 text-right font-financial">{c.totalCartons.toLocaleString()}</td>
-                      <td className="p-2.5 text-right font-financial">{c.billableCuft.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                      <td className="p-2.5">
-                        <span className={`text-[10px] ${c.carrierType === "house" ? "text-blue-700" : c.carrierType === "overflow" ? "text-amber-700" : "text-slate-400"}`}>
-                          {c.carrier || "—"}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-center font-financial">
-                        {c.chassisDays > 0 ? `${c.chassisDays}d` : "—"}
-                      </td>
-                      <td className="p-2.5 text-right font-financial text-emerald-700 font-medium">
-                        {fmt(c.totalRevenue)}
-                      </td>
-                      <td className="p-2.5 text-right font-financial text-red-700 font-medium">
-                        {c.totalCost > 0 ? fmt(c.totalCost) : "—"}
-                      </td>
-                      <td className="p-2.5 text-right font-financial font-medium">
-                        <span className={c.grossMargin >= 0 ? "text-blue-700" : "text-red-700"}>
-                          {fmt(c.grossMargin)}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <StatusPill status={c.drayageStatus} type="drayage" />
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <StatusPill status={c.unloadStatus} type="unload" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-muted-foreground">Handling</span><span className="font-mono">$0.15/carton</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Handling Min</span><span className="font-mono">$550/container</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Drayage (bill)</span><span className="font-mono">$495/container</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Drayage (pay M&A)</span><span className="font-mono">$425/container</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Chassis (bill)</span><span className="font-mono">$40/day</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Chassis (pay M&A)</span><span className="font-mono">$30/day</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Storage</span><span className="font-mono">$0.18/cuft</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Shrink Wrap</span><span className="font-mono">$2.50/pallet</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Fernando)</span><span className="font-mono">$260-300/ctnr</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Freddie)</span><span className="font-mono">$425-600/ctnr</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pallets</span><span className="font-mono">$4.50/pallet</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Min CuFt/Case</span><span className="font-mono">1.3 cuft</span></div>
             </div>
           </CardContent>
         </Card>

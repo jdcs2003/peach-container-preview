@@ -1,27 +1,27 @@
+/*
+ * Container Detail — full billing breakdown for a single container
+ */
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { allContainers } from "@/data/containers";
-import { useParams } from "wouter";
-import { Link } from "wouter";
-import { ArrowLeft, Package, DollarSign, Truck, Calendar, BarChart3 } from "lucide-react";
+import { useParams, Link } from "wouter";
+import { ArrowLeft, Package, DollarSign, Truck, Calendar, BarChart3, HardHat } from "lucide-react";
 
-const fmt = (v: number) =>
-  v.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const fmt = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
-function StatusPill({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    payable: "bg-amber-100 text-amber-800 border-amber-200",
-    pending: "bg-slate-100 text-slate-600 border-slate-200",
-    completed: "bg-emerald-100 text-emerald-800 border-emerald-200",
-    waiting: "bg-amber-100 text-amber-800 border-amber-200",
-    invoiced: "bg-blue-100 text-blue-800 border-blue-200",
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    unloaded: "bg-emerald-100 text-emerald-800",
+    received: "bg-blue-100 text-blue-800",
+    in_transit: "bg-amber-100 text-amber-800",
+    pending: "bg-slate-100 text-slate-600",
+    projected: "bg-purple-100 text-purple-700",
+    billed: "bg-emerald-100 text-emerald-800",
+    unbilled: "bg-red-100 text-red-700",
+    paid: "bg-emerald-100 text-emerald-800",
+    due: "bg-red-100 text-red-700",
   };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>
-      {status.replace(/_/g, " ").toUpperCase()}
-    </span>
-  );
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100 text-gray-600"}`}>{status.replace("_", " ")}</span>;
 }
 
 export default function ContainerDetail() {
@@ -59,11 +59,13 @@ export default function ContainerDetail() {
             <div>
               <h1 className="text-xl font-bold font-mono">{c.containerNumber}</h1>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>PO #{c.poNumber}</span>
-                <span>·</span>
+                {c.po && <span>PO #{c.po}</span>}
+                {c.po && <span>·</span>}
                 <span>{c.period}</span>
                 <span>·</span>
-                <StatusPill status={c.billingStatus} />
+                <StatusBadge status={c.status} />
+                <span>·</span>
+                <StatusBadge status={c.billingStatus} />
               </div>
             </div>
           </div>
@@ -74,26 +76,26 @@ export default function ContainerDetail() {
           <Card className="border-l-4 border-l-emerald-500">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Revenue</div>
-              <div className="text-2xl font-bold font-financial text-emerald-700">{fmt(c.totalRevenue)}</div>
+              <div className="text-2xl font-bold font-mono text-emerald-700">{fmt(c.totalRevenue)}</div>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-red-500">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Cost</div>
-              <div className="text-2xl font-bold font-financial text-red-700">{fmt(c.totalCost)}</div>
+              <div className="text-2xl font-bold font-mono text-red-700">{fmt(c.totalCost)}</div>
             </CardContent>
           </Card>
           <Card className="border-l-4 border-l-blue-500">
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Margin ({marginPct}%)</div>
-              <div className={`text-2xl font-bold font-financial ${c.grossMargin >= 0 ? "text-blue-700" : "text-red-700"}`}>
+              <div className={`text-2xl font-bold font-mono ${c.grossMargin >= 0 ? "text-blue-700" : "text-red-700"}`}>
                 {fmt(c.grossMargin)}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Container Info */}
+        {/* Container Info + Drayage */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
             <CardHeader className="pb-2 pt-3 px-4">
@@ -107,14 +109,18 @@ export default function ContainerDetail() {
                 <div className="font-medium">{c.eta || "—"}</div>
                 <div className="text-muted-foreground">Arrival Date</div>
                 <div className="font-medium">{c.arrivalDate || "—"}</div>
+                <div className="text-muted-foreground">Invoice #</div>
+                <div className="font-mono font-medium">{c.invoiceNumber || "—"}</div>
                 <div className="text-muted-foreground">Total Cartons</div>
-                <div className="font-financial font-medium">{c.totalCartons.toLocaleString()}</div>
-                <div className="text-muted-foreground">Actual CuFt</div>
-                <div className="font-financial font-medium">{c.actualCuft.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                <div className="font-mono font-medium">{c.cartons > 0 ? c.cartons.toLocaleString() : "—"}</div>
+                <div className="text-muted-foreground">Inbound CuFt</div>
+                <div className="font-mono font-medium">{c.inbCuft > 0 ? c.inbCuft.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</div>
                 <div className="text-muted-foreground">Billable CuFt</div>
-                <div className="font-financial font-medium">{c.billableCuft.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                <div className="font-mono font-medium">{c.billableCuft > 0 ? c.billableCuft.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</div>
+                <div className="text-muted-foreground">Pallets</div>
+                <div className="font-mono font-medium">{c.pallets > 0 ? c.pallets : "—"}</div>
                 <div className="text-muted-foreground">SKU Count</div>
-                <div className="font-financial font-medium">{c.skuCount}</div>
+                <div className="font-mono font-medium">{c.skuCount > 0 ? c.skuCount : "—"}</div>
               </div>
             </CardContent>
           </Card>
@@ -127,22 +133,47 @@ export default function ContainerDetail() {
             </CardHeader>
             <CardContent className="px-4 pb-3">
               <div className="grid grid-cols-2 gap-y-2 text-sm">
-                <div className="text-muted-foreground">Carrier</div>
-                <div className="font-medium">{c.carrier || "Not assigned"}</div>
+                <div className="text-muted-foreground">Drayage Source</div>
+                <div className="font-medium capitalize">{c.drayageSource}</div>
+                <div className="text-muted-foreground">SSL</div>
+                <div className="font-medium">{c.ssl || "—"}</div>
                 <div className="text-muted-foreground">Pull Date</div>
                 <div className="font-medium">{c.pullDate || "—"}</div>
                 <div className="text-muted-foreground">Return Date</div>
                 <div className="font-medium">{c.returnDate || "—"}</div>
                 <div className="text-muted-foreground">Chassis Days</div>
-                <div className="font-financial font-medium">{c.chassisDays > 0 ? `${c.chassisDays} days` : "—"}</div>
-                <div className="text-muted-foreground">Drayage Status</div>
-                <div><StatusPill status={c.drayageStatus} /></div>
-                <div className="text-muted-foreground">Invoice</div>
-                <div className="font-mono text-xs">{c.drayageInvoice || "—"}</div>
+                <div className="font-mono font-medium">{c.chassisDays > 0 ? `${c.chassisDays} days` : "—"}</div>
+                <div className="text-muted-foreground">M&A Status</div>
+                <div><StatusBadge status={c.maDrayageStatus} /></div>
+                <div className="text-muted-foreground">M&A Invoice</div>
+                <div className="font-mono text-xs">{c.maDrayageInvoice || "—"}</div>
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Lumper Info */}
+        <Card>
+          <CardHeader className="pb-2 pt-3 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <HardHat className="w-4 h-4" /> Lumper / Unload
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 text-sm">
+              <div className="text-muted-foreground">Vendor</div>
+              <div className="font-medium">{c.lumperVendor || "Not assigned"}</div>
+              <div className="text-muted-foreground">Rate</div>
+              <div className="font-mono font-medium">{c.lumperRate > 0 ? fmt(c.lumperRate) : "—"}</div>
+              <div className="text-muted-foreground">Date Unloaded</div>
+              <div className="font-medium">{c.dateUnloaded || "—"}</div>
+              <div className="text-muted-foreground">Status</div>
+              <div><StatusBadge status={c.lumperStatus} /></div>
+              <div className="text-muted-foreground">Invoice</div>
+              <div className="font-mono text-xs">{c.lumperInvoice || "—"}</div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Revenue Detail */}
         <Card>
@@ -164,44 +195,46 @@ export default function ContainerDetail() {
               <tbody>
                 <tr className="border-b">
                   <td className="py-1.5">IB Handling</td>
-                  <td className="py-1.5 text-right font-financial text-muted-foreground">$0.15/ctn</td>
-                  <td className="py-1.5 text-right font-financial">{c.totalCartons.toLocaleString()} ctns</td>
-                  <td className="py-1.5 text-right font-financial font-medium">
+                  <td className="py-1.5 text-right font-mono text-muted-foreground">$0.15/ctn</td>
+                  <td className="py-1.5 text-right font-mono">{c.cartons > 0 ? `${c.cartons.toLocaleString()} ctns` : "—"}</td>
+                  <td className="py-1.5 text-right font-mono font-medium">
                     {fmt(c.handlingRevenue)}
-                    {c.ibNote === "Minimum" && <span className="text-[10px] text-amber-600 ml-1">(MIN)</span>}
+                    {c.handlingCalc < 550 && c.handlingRevenue === 550 && <span className="text-[10px] text-amber-600 ml-1">(MIN)</span>}
                   </td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-1.5">Monthly Storage</td>
-                  <td className="py-1.5 text-right font-financial text-muted-foreground">$0.18/cuft</td>
-                  <td className="py-1.5 text-right font-financial">{c.billableCuft.toLocaleString(undefined, { maximumFractionDigits: 0 })} cuft</td>
-                  <td className="py-1.5 text-right font-financial font-medium">{fmt(c.storageRevenue)}</td>
+                  <td className="py-1.5 text-right font-mono text-muted-foreground">$0.18/cuft</td>
+                  <td className="py-1.5 text-right font-mono">{c.billableCuft > 0 ? `${c.billableCuft.toLocaleString(undefined, { maximumFractionDigits: 0 })} cuft` : "—"}</td>
+                  <td className="py-1.5 text-right font-mono font-medium">{fmt(c.storageRevenue)}</td>
                 </tr>
                 {c.drayageRevenue > 0 && (
                   <tr className="border-b">
                     <td className="py-1.5">Drayage Pass-through</td>
-                    <td className="py-1.5 text-right font-financial text-muted-foreground">$495/cntr</td>
-                    <td className="py-1.5 text-right font-financial">1</td>
-                    <td className="py-1.5 text-right font-financial font-medium">{fmt(c.drayageRevenue)}</td>
+                    <td className="py-1.5 text-right font-mono text-muted-foreground">$495/cntr</td>
+                    <td className="py-1.5 text-right font-mono">1</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.drayageRevenue)}</td>
                   </tr>
                 )}
                 {c.chassisRevenue > 0 && (
                   <tr className="border-b">
                     <td className="py-1.5">Chassis</td>
-                    <td className="py-1.5 text-right font-financial text-muted-foreground">$40/day</td>
-                    <td className="py-1.5 text-right font-financial">{c.chassisDays} days</td>
-                    <td className="py-1.5 text-right font-financial font-medium">{fmt(c.chassisRevenue)}</td>
+                    <td className="py-1.5 text-right font-mono text-muted-foreground">$40/day</td>
+                    <td className="py-1.5 text-right font-mono">{c.chassisDays} days</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.chassisRevenue)}</td>
                   </tr>
                 )}
-                <tr className="border-b">
-                  <td className="py-1.5">Shrink Wrap</td>
-                  <td className="py-1.5 text-right font-financial text-muted-foreground">$2.50/pallet</td>
-                  <td className="py-1.5 text-right font-financial">20 pallets</td>
-                  <td className="py-1.5 text-right font-financial font-medium">{fmt(c.palletRevenue)}</td>
-                </tr>
+                {c.shrinkWrapRevenue > 0 && (
+                  <tr className="border-b">
+                    <td className="py-1.5">Shrink Wrap</td>
+                    <td className="py-1.5 text-right font-mono text-muted-foreground">$2.50/pallet</td>
+                    <td className="py-1.5 text-right font-mono">{c.pallets} pallets</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.shrinkWrapRevenue)}</td>
+                  </tr>
+                )}
                 <tr className="font-semibold">
                   <td className="py-2" colSpan={3}>Total Revenue</td>
-                  <td className="py-2 text-right font-financial text-emerald-700">{fmt(c.totalRevenue)}</td>
+                  <td className="py-2 text-right font-mono text-emerald-700">{fmt(c.totalRevenue)}</td>
                 </tr>
               </tbody>
             </table>
@@ -221,47 +254,62 @@ export default function ContainerDetail() {
                 <tr className="border-b">
                   <th className="text-left py-1.5 font-semibold text-xs">Vendor</th>
                   <th className="text-left py-1.5 font-semibold text-xs">Line Item</th>
-                  <th className="text-right py-1.5 font-semibold text-xs">Rate</th>
                   <th className="text-right py-1.5 font-semibold text-xs">Amount</th>
+                  <th className="text-center py-1.5 font-semibold text-xs">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {c.maDrayageCost > 0 && (
                   <tr className="border-b">
                     <td className="py-1.5">M&A Transport</td>
-                    <td className="py-1.5">Container Drayage</td>
-                    <td className="py-1.5 text-right font-financial text-muted-foreground">$425/cntr</td>
-                    <td className="py-1.5 text-right font-financial font-medium">{fmt(c.maDrayageCost)}</td>
+                    <td className="py-1.5">Container Drayage ($425)</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maDrayageCost)}</td>
+                    <td className="py-1.5 text-center"><StatusBadge status={c.maDrayageStatus} /></td>
                   </tr>
                 )}
                 {c.maChassisCost > 0 && (
                   <tr className="border-b">
                     <td className="py-1.5">M&A Transport</td>
-                    <td className="py-1.5">Chassis ({c.chassisDays} days)</td>
-                    <td className="py-1.5 text-right font-financial text-muted-foreground">$30/day</td>
-                    <td className="py-1.5 text-right font-financial font-medium">{fmt(c.maChassisCost)}</td>
+                    <td className="py-1.5">Chassis ({c.chassisDays} days × $30)</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maChassisCost)}</td>
+                    <td className="py-1.5 text-center"><StatusBadge status={c.maDrayageStatus} /></td>
                   </tr>
                 )}
-                <tr className="border-b">
-                  <td className="py-1.5">Fernando Barrera</td>
-                  <td className="py-1.5">Container Unload</td>
-                  <td className="py-1.5 text-right font-financial text-muted-foreground">$260/cntr</td>
-                  <td className="py-1.5 text-right font-financial font-medium">{fmt(c.fernandoUnloadCost)}</td>
-                </tr>
-                <tr className="border-b">
-                  <td className="py-1.5">Pallet Supplier</td>
-                  <td className="py-1.5">Pallets (est. 20)</td>
-                  <td className="py-1.5 text-right font-financial text-muted-foreground">$4.50/pallet</td>
-                  <td className="py-1.5 text-right font-financial font-medium">{fmt(c.palletCost)}</td>
-                </tr>
+                {c.lumperCost > 0 && (
+                  <tr className="border-b">
+                    <td className="py-1.5">{c.lumperVendor}</td>
+                    <td className="py-1.5">Container Unload</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.lumperCost)}</td>
+                    <td className="py-1.5 text-center"><StatusBadge status={c.lumperStatus} /></td>
+                  </tr>
+                )}
+                {c.palletCost > 0 && (
+                  <tr className="border-b">
+                    <td className="py-1.5">Pallet Supplier</td>
+                    <td className="py-1.5">Pallets ({c.pallets} × $4.50)</td>
+                    <td className="py-1.5 text-right font-mono font-medium">{fmt(c.palletCost)}</td>
+                    <td className="py-1.5 text-center"><StatusBadge status="paid" /></td>
+                  </tr>
+                )}
                 <tr className="font-semibold">
-                  <td className="py-2" colSpan={3}>Total Cost</td>
-                  <td className="py-2 text-right font-financial text-red-700">{fmt(c.totalCost)}</td>
+                  <td className="py-2" colSpan={2}>Total Cost</td>
+                  <td className="py-2 text-right font-mono text-red-700">{fmt(c.totalCost)}</td>
+                  <td></td>
                 </tr>
               </tbody>
             </table>
           </CardContent>
         </Card>
+
+        {/* Notes */}
+        {c.notes && (
+          <Card className="bg-muted/30">
+            <CardContent className="p-4">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Notes</div>
+              <p className="text-sm">{c.notes}</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </Layout>
   );
