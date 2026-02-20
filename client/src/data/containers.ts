@@ -20,6 +20,9 @@ export const RATES = {
   unloadFernando: 280,    // $/container (Fernando Palma standard)
   unloadFreddie: 425,     // $/container (Freddie standard)
   unloadFreddieHeavy: 600,// $/container (Freddie heavy)
+  monthlyStorageMinCuft: 65000,  // cuft threshold for monthly minimum
+  monthlyStorageMinRate: 0.24,   // $/cuft for monthly minimum
+  monthlyStorageMin: 15600,      // 65000 x $0.24 = $15,600/month floor
 };
 
 // ═══════════════════════════════════════════════════════════

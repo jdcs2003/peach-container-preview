@@ -1,11 +1,13 @@
-/*
+/**
  * Design: Industrial Logistics — Peach/Orange branding, slate sidebar
  * Dense data table, monospace financials, color-coded statuses
  * Now uses the reactive store for live data.
+ * Includes monthly storage minimum floor logic.
  */
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useStore } from "@/hooks/useStore";
+import { RATES } from "@/data/containers";
 import { exportContainersToExcel } from "@/lib/exportExcel";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import {
   Package, TrendingUp, TrendingDown, BarChart3,
   Truck, Clock, Search, ArrowUpRight, PlusCircle,
-  Layers, Download, HardHat, DollarSign
+  Layers, Download, HardHat, DollarSign, Warehouse, AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,6 +48,7 @@ export default function Dashboard() {
   const allContainers = store.getContainers();
   const lumperInvoices = store.getLumperInvoices();
   const drayageInvoices = store.getDrayageInvoices();
+  const monthlyStorage = store.getMonthlyStorageSummary();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -53,22 +56,36 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const unloaded = allContainers.filter(c => c.status === "unloaded");
-    const totalRev = unloaded.reduce((s, c) => s + c.totalRevenue, 0);
+    // Per-container revenue (before monthly storage adjustment)
+    const containerRev = unloaded.reduce((s, c) => s + c.totalRevenue, 0);
     const totalCost = unloaded.reduce((s, c) => s + c.totalCost, 0);
     const inTransit = allContainers.filter(c => c.status === "in_transit").length;
     const pending = allContainers.filter(c => c.status === "pending").length;
     const projected = allContainers.filter(c => c.status === "projected").length;
+
+    // Monthly storage minimum top-ups (additional revenue from floor)
+    const storageTopUp = monthlyStorage.reduce((s, m) => s + m.minimumTopUp, 0);
+    const storageProRate = monthlyStorage.reduce((s, m) => s + m.proRateDiscount, 0);
+    const netStorageAdjustment = storageTopUp - storageProRate;
+
+    // Adjusted total revenue = per-container totals + monthly storage adjustments
+    const totalRev = containerRev + netStorageAdjustment;
+
     return {
       total: allContainers.length,
       unloaded: unloaded.length,
       inTransit,
       pending,
       projected,
+      containerRev,
+      storageTopUp,
+      storageProRate,
+      netStorageAdjustment,
       totalRev,
       totalCost,
       margin: totalRev - totalCost,
     };
-  }, [allContainers]);
+  }, [allContainers, monthlyStorage]);
 
   const periods = useMemo(() => Array.from(new Set(allContainers.map(c => c.period))), [allContainers]);
 
@@ -154,8 +171,9 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Revenue & Cost Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Revenue & Cost Breakdown + Monthly Storage */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Revenue Breakdown */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -175,6 +193,12 @@ export default function Dashboard() {
                   <span className="font-mono font-medium">{fmt(val as number)}</span>
                 </div>
               ))}
+              {stats.netStorageAdjustment !== 0 && (
+                <div className="flex justify-between text-amber-700">
+                  <span>Monthly Storage Adj.</span>
+                  <span className="font-mono font-medium">{fmt(stats.netStorageAdjustment)}</span>
+                </div>
+              )}
               <div className="border-t pt-2 flex justify-between font-semibold">
                 <span>Total Revenue</span>
                 <span className="font-mono text-green-700">{fmt(stats.totalRev)}</span>
@@ -182,6 +206,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
+          {/* Cost Breakdown */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -206,9 +231,64 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Monthly Storage Minimum */}
+          <Card className="border-l-4 border-l-amber-500">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Warehouse className="w-4 h-4 text-amber-600" /> Monthly Storage Minimum
+              </CardTitle>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Floor: {fmt(RATES.monthlyStorageMin)}/mo ({RATES.monthlyStorageMinCuft.toLocaleString()} cuft × ${RATES.monthlyStorageMinRate}/cuft)
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {monthlyStorage.map(m => (
+                <div key={m.month} className="space-y-1 pb-2 border-b last:border-b-0 last:pb-0">
+                  <div className="flex justify-between font-semibold">
+                    <span>{m.month}</span>
+                    <span className="text-xs text-muted-foreground">{m.containerCount} containers</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Actual ({m.actualStorageCuft.toLocaleString()} cuft × $0.18)</span>
+                    <span className="font-mono">{fmt(m.actualStorageRevenue)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Monthly Minimum</span>
+                    <span className="font-mono">{fmt(m.minimumThreshold)}</span>
+                  </div>
+                  {m.minimumApplies && (
+                    <div className="flex justify-between text-xs text-amber-700">
+                      <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Min applies — top-up</span>
+                      <span className="font-mono font-semibold">+{fmt(m.minimumTopUp)}</span>
+                    </div>
+                  )}
+                  {!m.minimumApplies && (
+                    <div className="flex justify-between text-xs text-emerald-700">
+                      <span>Actual exceeds minimum</span>
+                      <span className="font-mono">No top-up needed</span>
+                    </div>
+                  )}
+                  {m.proRateDiscount > 0 && (
+                    <div className="flex justify-between text-xs text-blue-700">
+                      <span>Pro-rate discount</span>
+                      <span className="font-mono">-{fmt(m.proRateDiscount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs font-semibold pt-1">
+                    <span>Net Billed Storage</span>
+                    <span className="font-mono">{fmt(m.netStorage)}</span>
+                  </div>
+                </div>
+              ))}
+              {monthlyStorage.length === 0 && (
+                <div className="text-muted-foreground text-xs">No completed months yet</div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Lumper & Drayage Quick Summary */}
+        {/* Lumper & Drayage & Client Quick Summary */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-3">
@@ -343,11 +423,11 @@ export default function Dashboard() {
               <div className="flex justify-between"><span className="text-muted-foreground">Chassis (bill)</span><span className="font-mono">$40/day</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Chassis (pay M&A)</span><span className="font-mono">$30/day</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Storage</span><span className="font-mono">$0.18/cuft</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Monthly Storage Min</span><span className="font-mono font-semibold text-amber-700">{fmt(RATES.monthlyStorageMin)}/mo</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Shrink Wrap</span><span className="font-mono">$2.50/pallet</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Fernando)</span><span className="font-mono">$260-300/ctnr</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Freddie)</span><span className="font-mono">$425-600/ctnr</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Pallets</span><span className="font-mono">$4.50/pallet</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Min CuFt/Case</span><span className="font-mono">1.3 cuft</span></div>
             </div>
           </CardContent>
         </Card>

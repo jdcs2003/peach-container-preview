@@ -124,6 +124,69 @@ export function calculateBilling(c: Partial<Container>): Partial<Container> {
 }
 
 // ═══════════════════════════════════════════════════════════
+// MONTHLY STORAGE MINIMUM CALCULATOR
+// ═══════════════════════════════════════════════════════════
+export interface MonthlyStorageSummary {
+  month: string;             // "Jan 2026", "Feb 2026"
+  actualStorageCuft: number; // total cuft across all containers that month
+  actualStorageRevenue: number; // sum of per-container storage at $0.18
+  minimumThreshold: number;  // $15,600 (adjustable)
+  minimumApplies: boolean;   // true if actual < minimum
+  billedStorage: number;     // max(actual, minimum)
+  minimumTopUp: number;      // difference if minimum applies, else 0
+  containerCount: number;
+  proRateDiscount: number;   // manual adjustment for partial months
+  netStorage: number;        // billedStorage - proRateDiscount
+}
+
+export function calculateMonthlyStorage(
+  containers: Container[],
+  monthlyMin: number = RATES.monthlyStorageMin,
+  proRates: Record<string, number> = { "Jan 2026": 5388.60 } // Jan pro-rate from QB
+): MonthlyStorageSummary[] {
+  // Group containers by month
+  const byMonth: Record<string, Container[]> = {};
+  const monthMap: Record<string, string> = {
+    "jan": "Jan 2026", "january": "Jan 2026",
+    "feb": "Feb 2026", "february": "Feb 2026",
+    "mar": "Mar 2026", "march": "Mar 2026",
+    "apr": "Apr 2026", "april": "Apr 2026",
+  };
+  for (const c of containers) {
+    if (c.status !== "unloaded" && c.status !== "received") continue;
+    // Derive month from period: "January" → "Jan 2026", "Feb Wk1" → "Feb 2026"
+    const firstWord = c.period.split(" ")[0].toLowerCase();
+    const monthKey = monthMap[firstWord] || `${c.period.split(" ")[0]} 2026`;
+    if (!byMonth[monthKey]) byMonth[monthKey] = [];
+    byMonth[monthKey].push(c);
+  }
+
+  const months = ["Jan 2026", "Feb 2026", "Mar 2026"];
+  return months.map(month => {
+    const monthContainers = byMonth[month] || [];
+    const actualStorageCuft = monthContainers.reduce((s, c) => s + c.billableCuft, 0);
+    const actualStorageRevenue = monthContainers.reduce((s, c) => s + c.storageRevenue, 0);
+    const minimumApplies = actualStorageRevenue < monthlyMin;
+    const billedStorage = Math.max(actualStorageRevenue, monthlyMin);
+    const minimumTopUp = minimumApplies ? monthlyMin - actualStorageRevenue : 0;
+    const proRateDiscount = proRates[month] || 0;
+    const netStorage = billedStorage - proRateDiscount;
+    return {
+      month,
+      actualStorageCuft,
+      actualStorageRevenue,
+      minimumThreshold: monthlyMin,
+      minimumApplies,
+      billedStorage,
+      minimumTopUp,
+      containerCount: monthContainers.length,
+      proRateDiscount,
+      netStorage,
+    };
+  }).filter(m => m.containerCount > 0 || m.proRateDiscount > 0);
+}
+
+// ═══════════════════════════════════════════════════════════
 // SEED DRAYAGE INVOICES
 // ═══════════════════════════════════════════════════════════
 const seedDrayageInvoices: DrayageInvoice[] = [
@@ -413,6 +476,11 @@ class Store {
     }
     localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
+  }
+
+  // ── Monthly Storage ──
+  getMonthlyStorageSummary(): MonthlyStorageSummary[] {
+    return calculateMonthlyStorage(this.getContainers());
   }
 
   // ── Reset ──
