@@ -1,13 +1,18 @@
 import { Link, useLocation } from "wouter";
 import {
-  Package, BarChart3, FileText, Home,
-  ChevronRight, Truck, HardHat
+  Package, Home, ChevronRight, Truck, HardHat,
+  PlusCircle, FileText, DollarSign, Layers
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Home },
+  { href: "/container/new", label: "Add Container", icon: PlusCircle },
+  { href: "/batch-invoice", label: "Batch Invoice", icon: Layers },
+  { type: "divider" as const, label: "Payables" },
   { href: "/lumper-invoices", label: "Lumper Invoices", icon: HardHat },
   { href: "/drayage-invoices", label: "Drayage Invoices", icon: Truck },
+  { type: "divider" as const, label: "Receivables" },
+  { href: "/client-invoices", label: "Client Invoices", icon: DollarSign },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -32,12 +37,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-0.5">
-          {navItems.map((item) => {
-            const isActive = location === item.href ||
-              (item.href !== "/" && location.startsWith(item.href));
-            const Icon = item.icon;
+          {navItems.map((item, idx) => {
+            if ("type" in item && item.type === "divider") {
+              return (
+                <div key={idx} className="pt-3 pb-1 px-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">{item.label}</div>
+                </div>
+              );
+            }
+            const navItem = item as { href: string; label: string; icon: any };
+            const isActive = location === navItem.href ||
+              (navItem.href !== "/" && navItem.href !== "/container/new" && location.startsWith(navItem.href));
+            const Icon = navItem.icon;
             return (
-              <Link key={item.href} href={item.href}>
+              <Link key={navItem.href} href={navItem.href}>
                 <div
                   className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
                     isActive

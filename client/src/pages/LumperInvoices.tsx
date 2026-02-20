@@ -6,12 +6,16 @@ import { useState } from "react";
 import { Link } from "wouter";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { lumperInvoices, getLumperSummary, type LumperInvoice } from "@/data/lumperInvoices";
-import { HardHat, ChevronDown, ChevronUp, ArrowLeft, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { useStore } from "@/hooks/useStore";
+import { type LumperInvoice } from "@/data/store";
+import { exportLumperInvoiceToExcel } from "@/lib/exportExcel";
+import { Button } from "@/components/ui/button";
+import { HardHat, ChevronDown, ChevronUp, ArrowLeft, FileText, CheckCircle2, AlertCircle, Download, Check } from "lucide-react";
+import { toast } from "sonner";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
-function InvoiceCard({ invoice }: { invoice: LumperInvoice }) {
+function InvoiceCard({ invoice, onMarkPaid }: { invoice: LumperInvoice; onMarkPaid: (num: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const isPaid = invoice.status === "paid";
 
@@ -32,6 +36,16 @@ function InvoiceCard({ invoice }: { invoice: LumperInvoice }) {
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
                 {isPaid ? "PAID" : "DUE"}
               </span>
+            </div>
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); exportLumperInvoiceToExcel(invoice); toast.success("Excel downloaded"); }}>
+                <Download className="w-3 h-3" />
+              </Button>
+              {!isPaid && (
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600" onClick={(e) => { e.stopPropagation(); onMarkPaid(invoice.invoiceNumber); }}>
+                  <Check className="w-3 h-3" />
+                </Button>
+              )}
             </div>
             {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
           </div>
@@ -135,7 +149,15 @@ function InvoiceCard({ invoice }: { invoice: LumperInvoice }) {
 }
 
 export default function LumperInvoices() {
-  const summary = getLumperSummary();
+  const { store } = useStore();
+  const lumperInvoices = store.getLumperInvoices();
+  const summary = {
+    totalPaid: lumperInvoices.filter(i => i.status === "paid").reduce((s, i) => s + i.total, 0),
+    totalDue: lumperInvoices.filter(i => i.status === "due").reduce((s, i) => s + i.total, 0),
+    totalAll: lumperInvoices.reduce((s, i) => s + i.total, 0),
+    totalContainers: lumperInvoices.reduce((s, i) => s + i.containers.length, 0),
+  };
+  const handleMarkPaid = (num: string) => { store.markLumperInvoicePaid(num); toast.success(`Invoice ${num} marked as paid`); };
 
   return (
     <Layout>
@@ -186,7 +208,7 @@ export default function LumperInvoices() {
         {/* Invoice List */}
         <div className="space-y-3">
           {lumperInvoices.map(inv => (
-            <InvoiceCard key={inv.invoiceNumber} invoice={inv} />
+            <InvoiceCard key={inv.invoiceNumber} invoice={inv} onMarkPaid={handleMarkPaid} />
           ))}
         </div>
       </div>

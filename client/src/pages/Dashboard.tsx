@@ -1,18 +1,22 @@
 /*
  * Design: Industrial Logistics — Peach/Orange branding, slate sidebar
  * Dense data table, monospace financials, color-coded statuses
+ * Now uses the reactive store for live data.
  */
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
-import { allContainers, RATES, type Container } from "@/data/containers";
-import { getLumperSummary } from "@/data/lumperInvoices";
+import { useStore } from "@/hooks/useStore";
+import { exportContainersToExcel } from "@/lib/exportExcel";
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Package, TrendingUp, TrendingDown, BarChart3,
-  Truck, Clock, Search, ArrowUpRight
+  Truck, Clock, Search, ArrowUpRight, PlusCircle,
+  Layers, Download, HardHat, DollarSign
 } from "lucide-react";
+import { toast } from "sonner";
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : fmt(n);
@@ -38,11 +42,14 @@ function BillingBadge({ status }: { status: string }) {
 }
 
 export default function Dashboard() {
+  const { store } = useStore();
+  const allContainers = store.getContainers();
+  const lumperInvoices = store.getLumperInvoices();
+  const drayageInvoices = store.getDrayageInvoices();
+
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [periodFilter, setPeriodFilter] = useState<string>("all");
-
-  const lumperSummary = useMemo(() => getLumperSummary(), []);
 
   const stats = useMemo(() => {
     const unloaded = allContainers.filter(c => c.status === "unloaded");
@@ -61,9 +68,9 @@ export default function Dashboard() {
       totalCost,
       margin: totalRev - totalCost,
     };
-  }, []);
+  }, [allContainers]);
 
-  const periods = useMemo(() => Array.from(new Set(allContainers.map(c => c.period))), []);
+  const periods = useMemo(() => Array.from(new Set(allContainers.map(c => c.period))), [allContainers]);
 
   const filtered = useMemo(() => {
     return allContainers.filter(c => {
@@ -72,15 +79,33 @@ export default function Dashboard() {
       if (periodFilter !== "all" && c.period !== periodFilter) return false;
       return true;
     });
-  }, [search, statusFilter, periodFilter]);
+  }, [allContainers, search, statusFilter, periodFilter]);
+
+  // Lumper summary
+  const lumperPaid = lumperInvoices.filter(i => i.status === "paid").reduce((s, i) => s + i.total, 0);
+  const lumperDue = lumperInvoices.filter(i => i.status === "due").reduce((s, i) => s + i.total, 0);
+  const lumperContainers = lumperInvoices.reduce((s, i) => s + i.containers.length, 0);
 
   return (
     <Layout>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Container Management</h1>
-          <p className="text-sm text-muted-foreground mt-1">Diamond Home — SC-144 Warehouse · {allContainers.length} containers tracked</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Container Management</h1>
+            <p className="text-sm text-muted-foreground mt-1">Diamond Home — SC-144 Warehouse · {allContainers.length} containers tracked</p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/container/new">
+              <Button className="gap-2"><PlusCircle className="w-4 h-4" /> Add Container</Button>
+            </Link>
+            <Link href="/batch-invoice">
+              <Button variant="outline" className="gap-2"><Layers className="w-4 h-4" /> Batch Invoice</Button>
+            </Link>
+            <Button variant="outline" className="gap-2" onClick={() => { exportContainersToExcel(allContainers); toast.success("Excel exported"); }}>
+              <Download className="w-4 h-4" /> Export All
+            </Button>
+          </div>
         </div>
 
         {/* Stat Cards */}
@@ -124,7 +149,7 @@ export default function Dashboard() {
             <CardContent className="p-4">
               <Truck className="w-5 h-5 text-purple-600 mb-1" />
               <div className="text-2xl font-bold font-mono">{stats.projected}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Mar Projected</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Projected</div>
             </CardContent>
           </Card>
         </div>
@@ -184,32 +209,57 @@ export default function Dashboard() {
         </div>
 
         {/* Lumper & Drayage Quick Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">Fernando Palma — Lumper Invoices</CardTitle>
-                <Link href="/lumper-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View Details <ArrowUpRight className="w-3 h-3" /></span></Link>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2"><HardHat className="w-4 h-4" /> Lumper Invoices</CardTitle>
+                <Link href="/lumper-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
               </div>
             </CardHeader>
             <CardContent className="text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Total Paid</span><span className="font-mono font-medium text-emerald-700">{fmt(lumperSummary.totalPaid)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount Due</span><span className="font-mono font-medium text-red-600">{fmt(lumperSummary.totalDue)}</span></div>
-              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total ({lumperSummary.totalContainers} containers)</span><span className="font-mono">{fmt(lumperSummary.totalAll)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-mono font-medium text-emerald-700">{fmt(lumperPaid)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Due</span><span className="font-mono font-medium text-red-600">{fmt(lumperDue)}</span></div>
+              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total ({lumperContainers} ctnrs)</span><span className="font-mono">{fmt(lumperPaid + lumperDue)}</span></div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">M&A Transport — Drayage Invoices</CardTitle>
-                <Link href="/drayage-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View Details <ArrowUpRight className="w-3 h-3" /></span></Link>
+                <CardTitle className="text-sm font-semibold flex items-center gap-2"><Truck className="w-4 h-4" /> Drayage Invoices</CardTitle>
+                <Link href="/drayage-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
               </div>
             </CardHeader>
             <CardContent className="text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260201 (10 containers)</span><span className="font-mono font-medium text-emerald-700">$5,900.00 PAID</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260204 (8 containers)</span><span className="font-mono font-medium text-emerald-700">$3,970.00 PAID</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">MA-20260217 (15+ containers)</span><span className="font-mono font-medium text-red-600">~$8,325.00 DUE</span></div>
+              {drayageInvoices.map(inv => (
+                <div key={inv.invoiceNumber} className="flex justify-between">
+                  <span className="text-muted-foreground">{inv.invoiceNumber} ({inv.containers.length} ctnrs)</span>
+                  <span className={`font-mono font-medium ${inv.status === "paid" ? "text-emerald-700" : "text-red-600"}`}>{fmt(inv.total)} {inv.status.toUpperCase()}</span>
+                </div>
+              ))}
+              {drayageInvoices.length === 0 && <div className="text-muted-foreground text-xs">No drayage invoices yet</div>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2"><DollarSign className="w-4 h-4" /> Client Invoices</CardTitle>
+                <Link href="/client-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
+              </div>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1">
+              {store.getClientInvoices().length === 0 ? (
+                <div className="text-muted-foreground text-xs">No client invoices yet. Use Batch Invoice to create.</div>
+              ) : (
+                store.getClientInvoices().map(inv => (
+                  <div key={inv.invoiceNumber} className="flex justify-between">
+                    <span className="text-muted-foreground">{inv.invoiceNumber} ({inv.lines.length} ctnrs)</span>
+                    <span className={`font-mono font-medium ${inv.status === "paid" ? "text-emerald-700" : "text-amber-600"}`}>{fmt(inv.total)} {inv.status.toUpperCase()}</span>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>

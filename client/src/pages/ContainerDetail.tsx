@@ -3,9 +3,12 @@
  */
 import Layout from "@/components/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { allContainers } from "@/data/containers";
+import { useStore } from "@/hooks/useStore";
 import { useParams, Link } from "wouter";
-import { ArrowLeft, Package, DollarSign, Truck, Calendar, BarChart3, HardHat } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, Package, DollarSign, Truck, Calendar, BarChart3, HardHat, Edit, CheckCircle, Download } from "lucide-react";
+import { exportContainersToExcel } from "@/lib/exportExcel";
+import { toast } from "sonner";
 
 const fmt = (v: number) => v.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 
@@ -25,8 +28,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ContainerDetail() {
+  const { store } = useStore();
   const params = useParams<{ id: string }>();
-  const container = allContainers.find(c => c.containerNumber === params.id);
+  const container = store.getContainer(params.id || "");
 
   if (!container) {
     return (
@@ -67,6 +71,19 @@ export default function ContainerDetail() {
                 <span>·</span>
                 <StatusBadge status={c.billingStatus} />
               </div>
+            </div>
+            <div className="flex gap-2 ml-auto">
+              <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => { exportContainersToExcel([c], `container_${c.containerNumber}.xlsx`); toast.success("Excel exported"); }}>
+                <Download className="w-3 h-3" /> Export
+              </Button>
+              {(c.status === "pending" || c.status === "in_transit" || c.status === "projected") && (
+                <Button size="sm" className="gap-1 text-xs" onClick={() => {
+                  store.updateContainer(c.containerNumber, { status: "unloaded" });
+                  toast.success(`${c.containerNumber} marked as unloaded. Billing records generated.`);
+                }}>
+                  <CheckCircle className="w-3 h-3" /> Mark Arrived
+                </Button>
+              )}
             </div>
           </div>
         </div>
