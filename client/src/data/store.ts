@@ -138,7 +138,7 @@ const KEYS = {
   lumperInvoices: "pw_lumper_v4",
   drayageInvoices: "pw_drayage_v4",
   clientInvoices: "pw_client_v4",
-  initialized: "pw_init_v4",
+  initialized: "pw_init_v5",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -194,13 +194,13 @@ function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
 
   // Batch 1: MA-20260201 — 10 containers, $5,900 PAID
   const batch1Ids = [
-    "DRYU9540403", "EGSU1270331", "EITU1282857", "EITU9684456", "EITU9584427",
-    "EMCU8522387", "GAOU7182633", "HASU4158822", "HMMU4500998", "HPCU4902098",
+    "MRKU5545938", "MRKU3725416", "MRKU2402234", "TCNU8150661", "MSKU1928437",
+    "MRSU4926151", "SUDU8795010", "MRKU5416587", "BMOU4244012", "WHSU9015409",
   ];
   // Batch 2: MA-20260204 — 8 containers, $3,970 PAID
   const batch2Ids = [
-    "MRKU3249053", "MRKU4390820", "MRKU5807745", "MRSU6518272",
-    "MSKU6580816", "ONEU1075443", "TCKU8541738", "MSNU8718946",
+    "YMLU9580270", "JXLU6414630", "ZCSU7553498", "CAAU9375558",
+    "CAIU6454234", "MRSU3625003", "EGSU6378289", "TCNU7052887",
   ];
   // Batch 3: Paid 021726 — 15 containers, $8,325 PAID
   const batch3Ids = [
