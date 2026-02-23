@@ -1,23 +1,35 @@
 /**
  * Central state management with localStorage persistence.
- * All containers, lumper invoices, and drayage invoices live here.
- * Billing calculations are auto-generated from container data.
+ * All containers, invoices live here. Billing auto-calculated.
  */
-import { allContainers as seedContainers, RATES, type Container, type ContainerStatus, type BillingStatus, type PayableStatus, type DrayageSource } from "./containers";
-import { lumperInvoices as seedLumperInvoices, type LumperInvoice } from "./lumperInvoices";
+import { SEED_CONTAINERS, RATES, calcBilling, type Container } from "./containers";
+
+export type { Container };
+export { RATES, calcBilling };
 
 // ═══════════════════════════════════════════════════════════
-// RE-EXPORT TYPES
+// INVOICE TYPES
 // ═══════════════════════════════════════════════════════════
-export type { Container, ContainerStatus, BillingStatus, PayableStatus, DrayageSource, LumperInvoice };
-export { RATES };
+export interface LumperInvoiceLine {
+  container: string;
+  cartons: number;
+  skuCount: number;
+  rate: number;
+  unloadDate: string;
+}
 
-// ═══════════════════════════════════════════════════════════
-// DRAYAGE INVOICE TYPE
-// ═══════════════════════════════════════════════════════════
-export interface DrayageInvoiceContainer {
-  containerNumber: string;
-  pullDate: string;
+export interface LumperInvoice {
+  invoiceNumber: string;
+  invoiceDate: string;
+  vendor: string;
+  status: "paid" | "due" | "draft";
+  lines: LumperInvoiceLine[];
+  total: number;
+}
+
+export interface DrayageInvoiceLine {
+  container: string;
+  pickup: string;
   returnDate: string;
   chassisDays: number;
   containerFee: number;
@@ -29,16 +41,13 @@ export interface DrayageInvoice {
   invoiceNumber: string;
   invoiceDate: string;
   vendor: string;
-  status: "paid" | "due";
-  containers: DrayageInvoiceContainer[];
+  status: "paid" | "due" | "draft";
+  lines: DrayageInvoiceLine[];
   total: number;
 }
 
-// ═══════════════════════════════════════════════════════════
-// CLIENT INVOICE TYPE (bill to Diamond Home)
-// ═══════════════════════════════════════════════════════════
 export interface ClientInvoiceLine {
-  containerNumber: string;
+  container: string;
   po: string;
   cartons: number;
   billableCuft: number;
@@ -63,170 +72,153 @@ export interface ClientInvoice {
 }
 
 // ═══════════════════════════════════════════════════════════
-// STORAGE KEYS
-// ═══════════════════════════════════════════════════════════
-const KEYS = {
-  containers: "pw_containers",
-  lumperInvoices: "pw_lumper_invoices",
-  drayageInvoices: "pw_drayage_invoices",
-  clientInvoices: "pw_client_invoices",
-  initialized: "pw_initialized_v2",
-};
-
-// ═══════════════════════════════════════════════════════════
-// BILLING CALCULATOR
-// ═══════════════════════════════════════════════════════════
-export function calculateBilling(c: Partial<Container>): Partial<Container> {
-  const cartons = c.cartons || 0;
-  const inbCuft = c.inbCuft || 0;
-  const pallets = c.pallets || 0;
-  const chassisDays = c.chassisDays || 0;
-  const lumperRate = c.lumperRate || RATES.unloadFernando;
-
-  // Billable cuft = max(inbCuft, cartons × 1.3)
-  const billableCuft = c.billableCuft || Math.max(inbCuft, cartons * RATES.minCuftPerCase);
-
-  // Revenue
-  const handlingCalc = cartons * RATES.handling;
-  const handlingRevenue = Math.max(handlingCalc, RATES.handlingMin);
-  const storageRevenue = Math.round(billableCuft * RATES.storage * 100) / 100;
-  const drayageRevenue = (c.drayageSource && c.drayageSource !== "pending") ? RATES.drayageBill : 0;
-  const chassisRevenue = chassisDays * RATES.chassisBill;
-  const shrinkWrapRevenue = pallets * RATES.shrinkWrap;
-  const totalRevenue = handlingRevenue + storageRevenue + drayageRevenue + chassisRevenue + shrinkWrapRevenue;
-
-  // Costs
-  const lumperCost = (c.status === "unloaded" || c.status === "received") ? lumperRate : 0;
-  const palletCost = pallets * RATES.palletCost;
-  const maDrayageCost = (c.drayageSource === "m&a") ? RATES.drayagePay : 0;
-  const maChassisCost = (c.drayageSource === "m&a") ? chassisDays * RATES.chassisPay : 0;
-  const maDrayageTotal = maDrayageCost + maChassisCost;
-  const totalCost = lumperCost + palletCost + maDrayageTotal;
-
-  return {
-    ...c,
-    billableCuft,
-    handlingCalc,
-    handlingRevenue,
-    storageRevenue,
-    drayageRevenue,
-    chassisRevenue,
-    shrinkWrapRevenue,
-    totalRevenue,
-    lumperCost,
-    palletCost,
-    maDrayageCost,
-    maChassisCost,
-    maDrayageTotal,
-    totalCost,
-    grossMargin: totalRevenue - totalCost,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════
-// MONTHLY STORAGE MINIMUM CALCULATOR
+// MONTHLY STORAGE MINIMUM
 // ═══════════════════════════════════════════════════════════
 export interface MonthlyStorageSummary {
-  month: string;             // "Jan 2026", "Feb 2026"
-  actualStorageCuft: number; // total cuft across all containers that month
-  actualStorageRevenue: number; // sum of per-container storage at $0.18
-  minimumThreshold: number;  // $15,600 (adjustable)
-  minimumApplies: boolean;   // true if actual < minimum
-  billedStorage: number;     // max(actual, minimum)
-  minimumTopUp: number;      // difference if minimum applies, else 0
+  month: string;
+  actualStorageCuft: number;
+  actualStorageRevenue: number;
+  minimumThreshold: number;
+  minimumApplies: boolean;
+  billedStorage: number;
+  minimumTopUp: number;
   containerCount: number;
-  proRateDiscount: number;   // manual adjustment for partial months
-  netStorage: number;        // billedStorage - proRateDiscount
+  proRateDiscount: number;
+  netStorage: number;
 }
 
 export function calculateMonthlyStorage(
   containers: Container[],
-  monthlyMin: number = RATES.monthlyStorageMin,
-  proRates: Record<string, number> = { "Jan 2026": 5388.60 } // Jan pro-rate from QB
+  monthlyMin: number = RATES.monthlyStorageMinTotal,
+  proRates: Record<string, number> = { "Jan 2026": 5388.60 }
 ): MonthlyStorageSummary[] {
-  // Group containers by month
   const byMonth: Record<string, Container[]> = {};
   const monthMap: Record<string, string> = {
-    "jan": "Jan 2026", "january": "Jan 2026",
-    "feb": "Feb 2026", "february": "Feb 2026",
-    "mar": "Mar 2026", "march": "Mar 2026",
-    "apr": "Apr 2026", "april": "Apr 2026",
+    jan: "Jan 2026", feb: "Feb 2026", mar: "Mar 2026", apr: "Apr 2026",
   };
   for (const c of containers) {
-    if (c.status !== "unloaded" && c.status !== "received") continue;
-    // Derive month from period: "January" → "Jan 2026", "Feb Wk1" → "Feb 2026"
-    const firstWord = c.period.split(" ")[0].toLowerCase();
-    const monthKey = monthMap[firstWord] || `${c.period.split(" ")[0]} 2026`;
+    if (!["unloaded", "billed", "received"].includes(c.status)) continue;
+    const firstWord = (c.period || "").split(" ")[0].toLowerCase();
+    const monthKey = monthMap[firstWord] || `${(c.period || "").split(" ")[0]} 2026`;
+    if (!monthKey || monthKey === " 2026") continue;
     if (!byMonth[monthKey]) byMonth[monthKey] = [];
     byMonth[monthKey].push(c);
   }
 
-  const months = ["Jan 2026", "Feb 2026", "Mar 2026"];
-  return months.map(month => {
-    const monthContainers = byMonth[month] || [];
-    const actualStorageCuft = monthContainers.reduce((s, c) => s + c.billableCuft, 0);
-    const actualStorageRevenue = monthContainers.reduce((s, c) => s + c.storageRevenue, 0);
-    const minimumApplies = actualStorageRevenue < monthlyMin;
-    const billedStorage = Math.max(actualStorageRevenue, monthlyMin);
-    const minimumTopUp = minimumApplies ? monthlyMin - actualStorageRevenue : 0;
-    const proRateDiscount = proRates[month] || 0;
-    const netStorage = billedStorage - proRateDiscount;
-    return {
-      month,
-      actualStorageCuft,
-      actualStorageRevenue,
-      minimumThreshold: monthlyMin,
-      minimumApplies,
-      billedStorage,
-      minimumTopUp,
-      containerCount: monthContainers.length,
-      proRateDiscount,
-      netStorage,
-    };
-  }).filter(m => m.containerCount > 0 || m.proRateDiscount > 0);
+  return ["Jan 2026", "Feb 2026", "Mar 2026"]
+    .map((month) => {
+      const mc = byMonth[month] || [];
+      const actualCuft = mc.reduce((s, c) => s + c.billableCuft, 0);
+      const actualRev = mc.reduce((s, c) => s + c.storageRevenue, 0);
+      const minApplies = actualRev < monthlyMin;
+      const billed = Math.max(actualRev, monthlyMin);
+      const topUp = minApplies ? monthlyMin - actualRev : 0;
+      const proRate = proRates[month] || 0;
+      return {
+        month,
+        actualStorageCuft: +actualCuft.toFixed(2),
+        actualStorageRevenue: +actualRev.toFixed(2),
+        minimumThreshold: monthlyMin,
+        minimumApplies: minApplies,
+        billedStorage: +billed.toFixed(2),
+        minimumTopUp: +topUp.toFixed(2),
+        containerCount: mc.length,
+        proRateDiscount: proRate,
+        netStorage: +(billed - proRate).toFixed(2),
+      };
+    })
+    .filter((m) => m.containerCount > 0 || m.proRateDiscount > 0);
 }
 
 // ═══════════════════════════════════════════════════════════
-// SEED DRAYAGE INVOICES
+// STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
-const seedDrayageInvoices: DrayageInvoice[] = [
-  {
-    invoiceNumber: "MA-20260201",
-    invoiceDate: "2026-02-01",
-    vendor: "M&A Transport",
-    status: "paid",
-    containers: seedContainers
-      .filter(c => c.maDrayageInvoice === "MA-20260201")
-      .map(c => ({
-        containerNumber: c.containerNumber,
-        pullDate: c.pullDate,
-        returnDate: c.returnDate,
-        chassisDays: c.chassisDays,
-        containerFee: c.maDrayageCost,
-        chassisFee: c.maChassisCost,
-        total: c.maDrayageTotal,
-      })),
-    total: seedContainers.filter(c => c.maDrayageInvoice === "MA-20260201").reduce((s, c) => s + c.maDrayageTotal, 0),
-  },
-  {
-    invoiceNumber: "MA-20260204",
-    invoiceDate: "2026-02-04",
-    vendor: "M&A Transport",
-    status: "paid",
-    containers: seedContainers
-      .filter(c => c.maDrayageInvoice === "MA-20260204")
-      .map(c => ({
-        containerNumber: c.containerNumber,
-        pullDate: c.pullDate,
-        returnDate: c.returnDate,
-        chassisDays: c.chassisDays,
-        containerFee: c.maDrayageCost,
-        chassisFee: c.maChassisCost,
-        total: c.maDrayageTotal,
-      })),
-    total: seedContainers.filter(c => c.maDrayageInvoice === "MA-20260204").reduce((s, c) => s + c.maDrayageTotal, 0),
-  },
-];
+const KEYS = {
+  containers: "pw_containers_v3",
+  lumperInvoices: "pw_lumper_v3",
+  drayageInvoices: "pw_drayage_v3",
+  clientInvoices: "pw_client_v3",
+  initialized: "pw_init_v3",
+};
+
+// ═══════════════════════════════════════════════════════════
+// SEED INVOICES from actual data
+// ═══════════════════════════════════════════════════════════
+function buildSeedLumperInvoices(containers: Container[]): LumperInvoice[] {
+  // Group unloaded containers by week for Fernando invoices
+  const byWeek: Record<string, Container[]> = {};
+  for (const c of containers) {
+    if (c.fernandoUnloadDate && c.status !== "canceled") {
+      const wk = c.period || "Unknown";
+      if (!byWeek[wk]) byWeek[wk] = [];
+      byWeek[wk].push(c);
+    }
+  }
+  const invoices: LumperInvoice[] = [];
+  const sortedWeeks = Object.keys(byWeek).sort();
+  let invNum = 1;
+  for (const wk of sortedWeeks) {
+    const cs = byWeek[wk];
+    const lines: LumperInvoiceLine[] = cs.map((c) => ({
+      container: c.container,
+      cartons: c.cartons,
+      skuCount: c.skuCount,
+      rate: c.fernandoRate,
+      unloadDate: c.fernandoUnloadDate,
+    }));
+    const total = lines.reduce((s, l) => s + l.rate, 0);
+    invoices.push({
+      invoiceNumber: `FP-2026-${String(invNum).padStart(3, "0")}`,
+      invoiceDate: cs[0]?.fernandoUnloadDate || "",
+      vendor: "Fernando Palma",
+      status: wk.startsWith("Jan") || wk === "Feb Wk1" || wk === "Feb Wk2" ? "paid" : "due",
+      lines,
+      total,
+    });
+    invNum++;
+  }
+  return invoices;
+}
+
+function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
+  // Group by M&A pickup batches
+  const withMA = containers.filter((c) => c.maPickup);
+  if (withMA.length === 0) return [];
+  
+  // Group by pickup week
+  const byWeek: Record<string, Container[]> = {};
+  for (const c of withMA) {
+    const d = new Date(c.maPickup);
+    const wk = `${d.getFullYear()}-W${Math.ceil(d.getDate() / 7)}`;
+    if (!byWeek[wk]) byWeek[wk] = [];
+    byWeek[wk].push(c);
+  }
+  
+  const invoices: DrayageInvoice[] = [];
+  let invNum = 1;
+  for (const wk of Object.keys(byWeek).sort()) {
+    const cs = byWeek[wk];
+    const lines: DrayageInvoiceLine[] = cs.map((c) => ({
+      container: c.container,
+      pickup: c.maPickup,
+      returnDate: c.maReturn,
+      chassisDays: c.maChassisDays,
+      containerFee: c.maDrayageCost,
+      chassisFee: c.maChassisCost,
+      total: c.maDrayageCost + c.maChassisCost,
+    }));
+    invoices.push({
+      invoiceNumber: `MA-2026-${String(invNum).padStart(3, "0")}`,
+      invoiceDate: cs[0]?.maPickup || "",
+      vendor: "M&A Transport",
+      status: "paid",
+      lines,
+      total: lines.reduce((s, l) => s + l.total, 0),
+    });
+    invNum++;
+  }
+  return invoices;
+}
 
 // ═══════════════════════════════════════════════════════════
 // STORE CLASS
@@ -235,230 +227,273 @@ class Store {
   private listeners: Set<() => void> = new Set();
 
   constructor() {
-    // Seed data on first load
     if (!localStorage.getItem(KEYS.initialized)) {
-      localStorage.setItem(KEYS.containers, JSON.stringify(seedContainers));
-      localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(seedLumperInvoices));
-      localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(seedDrayageInvoices));
-      localStorage.setItem(KEYS.clientInvoices, JSON.stringify([]));
-      localStorage.setItem(KEYS.initialized, "true");
+      this.seedAll();
     }
   }
 
-  // ── Subscriptions ──
+  private seedAll() {
+    localStorage.setItem(KEYS.containers, JSON.stringify(SEED_CONTAINERS));
+    localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(buildSeedLumperInvoices(SEED_CONTAINERS)));
+    localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(buildSeedDrayageInvoices(SEED_CONTAINERS)));
+    localStorage.setItem(KEYS.clientInvoices, JSON.stringify([]));
+    localStorage.setItem(KEYS.initialized, "true");
+  }
+
   subscribe(fn: () => void) {
     this.listeners.add(fn);
     return () => { this.listeners.delete(fn); };
   }
   private notify() {
-    this.listeners.forEach(fn => fn());
+    Array.from(this.listeners).forEach((fn) => fn());
   }
 
   // ── Containers ──
   getContainers(): Container[] {
-    try {
-      return JSON.parse(localStorage.getItem(KEYS.containers) || "[]");
-    } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(KEYS.containers) || "[]"); }
+    catch { return []; }
   }
 
-  getContainer(containerNumber: string): Container | undefined {
-    return this.getContainers().find(c => c.containerNumber === containerNumber);
+  getContainer(id: string): Container | undefined {
+    return this.getContainers().find((c) => c.container === id || c.id === id);
   }
 
   addContainer(data: Partial<Container>): Container {
     const containers = this.getContainers();
-    const maxId = containers.reduce((m, c) => Math.max(m, c.id), 0);
-    const calculated = calculateBilling(data);
-    const newContainer: Container = {
-      id: maxId + 1,
-      containerNumber: data.containerNumber || "",
-      po: data.po || "",
-      period: data.period || "",
-      invoiceNumber: data.invoiceNumber || "",
-      arrivalDate: data.arrivalDate || "",
-      eta: data.eta || "",
+    const calculated = calcBilling(data) as Container;
+    const newC: Container = {
+      id: data.container || data.id || `C-${Date.now()}`,
+      container: data.container || "",
       status: data.status || "pending",
-      notes: data.notes || "",
+      eta: data.eta || "",
+      period: data.period || "",
+      po: data.po || "",
       cartons: data.cartons || 0,
-      inbCuft: data.inbCuft || 0,
-      billableCuft: calculated.billableCuft || 0,
-      pallets: data.pallets || 0,
       skuCount: data.skuCount || 0,
-      pullDate: data.pullDate || "",
-      returnDate: data.returnDate || "",
-      chassisDays: data.chassisDays || 0,
-      ssl: data.ssl || "",
-      drayageSource: data.drayageSource || "m&a",
-      handlingCalc: calculated.handlingCalc || 0,
+      pallets: calculated.pallets || 0,
+      billableCuft: calculated.billableCuft || 0,
+      billed: false,
+      billingPeriod: data.period || "",
+      inExtensiv: data.inExtensiv ?? true,
+      plReceived: data.plReceived ?? false,
+      doReceived: data.doReceived ?? false,
       handlingRevenue: calculated.handlingRevenue || 0,
+      storageRevenue: calculated.storageRevenue || 0,
       drayageRevenue: calculated.drayageRevenue || 0,
       chassisRevenue: calculated.chassisRevenue || 0,
-      storageRevenue: calculated.storageRevenue || 0,
       shrinkWrapRevenue: calculated.shrinkWrapRevenue || 0,
       totalRevenue: calculated.totalRevenue || 0,
-      lumperVendor: data.lumperVendor || "Fernando Palma",
-      lumperRate: data.lumperRate || RATES.unloadFernando,
-      lumperCost: calculated.lumperCost || 0,
-      lumperStatus: data.lumperStatus || "pending",
-      lumperInvoice: data.lumperInvoice || "",
-      dateUnloaded: data.dateUnloaded || "",
-      palletCost: calculated.palletCost || 0,
+      fernandoRate: data.fernandoRate || RATES.fernandoBaseRate,
+      fernandoTotal: data.fernandoRate || RATES.fernandoBaseRate,
+      fernandoUnloadDate: data.fernandoUnloadDate || "",
       maDrayageCost: calculated.maDrayageCost || 0,
       maChassisCost: calculated.maChassisCost || 0,
-      maDrayageTotal: calculated.maDrayageTotal || 0,
-      maDrayageStatus: data.maDrayageStatus || "pending",
-      maDrayageInvoice: data.maDrayageInvoice || "",
+      maChassisDays: data.maChassisDays || 0,
+      maPickup: data.maPickup || "",
+      maReturn: data.maReturn || "",
+      palletCost: calculated.palletCost || 0,
       totalCost: calculated.totalCost || 0,
       grossMargin: calculated.grossMargin || 0,
-      billingStatus: data.billingStatus || "unbilled",
+      notes: data.notes || "",
+      carrier: data.carrier || "M&A Transport",
     };
-    containers.push(newContainer);
+    containers.push(newC);
     localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
-    return newContainer;
+    return newC;
   }
 
-  updateContainer(containerNumber: string, updates: Partial<Container>): Container | null {
+  updateContainer(id: string, updates: Partial<Container>): Container | null {
     const containers = this.getContainers();
-    const idx = containers.findIndex(c => c.containerNumber === containerNumber);
+    const idx = containers.findIndex((c) => c.container === id || c.id === id);
     if (idx === -1) return null;
-
     const merged = { ...containers[idx], ...updates };
-    const calculated = calculateBilling(merged);
-    const updated: Container = {
-      ...merged,
-      billableCuft: calculated.billableCuft || merged.billableCuft,
-      handlingCalc: calculated.handlingCalc || 0,
-      handlingRevenue: calculated.handlingRevenue || 0,
-      drayageRevenue: calculated.drayageRevenue || 0,
-      chassisRevenue: calculated.chassisRevenue || 0,
-      storageRevenue: calculated.storageRevenue || 0,
-      shrinkWrapRevenue: calculated.shrinkWrapRevenue || 0,
-      totalRevenue: calculated.totalRevenue || 0,
-      lumperCost: calculated.lumperCost || 0,
-      palletCost: calculated.palletCost || 0,
-      maDrayageCost: calculated.maDrayageCost || 0,
-      maChassisCost: calculated.maChassisCost || 0,
-      maDrayageTotal: calculated.maDrayageTotal || 0,
-      totalCost: calculated.totalCost || 0,
-      grossMargin: calculated.grossMargin || 0,
-    };
-    containers[idx] = updated;
+    const calculated = calcBilling(merged) as Container;
+    containers[idx] = { ...merged, ...calculated };
     localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
-    return updated;
+    return containers[idx];
   }
 
-  /** Mark container as arrived/unloaded — auto-generates M&A and lumper payable records */
-  markArrived(containerNumber: string, data: {
-    arrivalDate: string;
+  /** Mark container as arrived/unloaded — auto-generates payable records */
+  markUnloaded(id: string, data: {
     cartons: number;
-    inbCuft: number;
-    pallets: number;
     skuCount: number;
-    pullDate: string;
-    returnDate: string;
-    chassisDays: number;
-    ssl: string;
-    lumperVendor: string;
-    lumperRate: number;
-    dateUnloaded: string;
+    pallets?: number;
+    fernandoRate?: number;
+    fernandoUnloadDate: string;
+    maPickup?: string;
+    maReturn?: string;
+    maChassisDays?: number;
   }): Container | null {
-    return this.updateContainer(containerNumber, {
+    return this.updateContainer(id, {
       ...data,
       status: "unloaded",
-      drayageSource: "m&a",
-      lumperStatus: "due",
-      maDrayageStatus: "due",
+      fernandoTotal: data.fernandoRate || RATES.fernandoBaseRate,
     });
+  }
+
+  /** Toggle inbound tracking fields */
+  toggleTracking(id: string, field: "inExtensiv" | "plReceived" | "doReceived"): void {
+    const c = this.getContainer(id);
+    if (!c) return;
+    this.updateContainer(id, { [field]: !c[field] });
+  }
+
+  /** Batch import from Extensiv — returns { added, changed, unchanged } */
+  importExtensiv(rows: Array<{
+    container: string;
+    status: string;
+    arrival: string;
+    po: string;
+    cartons: number;
+    skuCount: number;
+    notes: string;
+  }>): { added: string[]; changed: Array<{ container: string; field: string; old: string; new_: string }[]>; unchanged: string[] } {
+    const containers = this.getContainers();
+    const byId = new Map(containers.map((c) => [c.container, c]));
+    const added: string[] = [];
+    const changed: Array<{ container: string; field: string; old: string; new_: string }[]> = [];
+    const unchanged: string[] = [];
+
+    for (const row of rows) {
+      const existing = byId.get(row.container);
+      if (!existing) {
+        added.push(row.container);
+        continue;
+      }
+      // Check for changes
+      const diffs: { container: string; field: string; old: string; new_: string }[] = [];
+      const statusMap: Record<string, string> = {
+        RECEIVED: "unloaded",
+        "IN TRANSIT": "in-transit",
+        CANCELED: "canceled",
+      };
+      const mappedStatus = statusMap[row.status] || row.status;
+      if (existing.status !== mappedStatus && mappedStatus !== existing.status) {
+        diffs.push({ container: row.container, field: "status", old: existing.status, new_: mappedStatus });
+      }
+      if (row.cartons > 0 && existing.cartons !== row.cartons) {
+        diffs.push({ container: row.container, field: "cartons", old: String(existing.cartons), new_: String(row.cartons) });
+      }
+      if (row.po && existing.po !== row.po) {
+        diffs.push({ container: row.container, field: "po", old: existing.po, new_: row.po });
+      }
+      if (row.arrival && existing.eta !== row.arrival) {
+        diffs.push({ container: row.container, field: "eta", old: existing.eta, new_: row.arrival });
+      }
+      if (diffs.length > 0) {
+        changed.push(diffs);
+      } else {
+        unchanged.push(row.container);
+      }
+    }
+    return { added, changed, unchanged };
+  }
+
+  /** Apply an Extensiv import — add new containers */
+  applyExtensivImport(rows: Array<{
+    container: string;
+    status: string;
+    arrival: string;
+    po: string;
+    cartons: number;
+    skuCount: number;
+    notes: string;
+  }>): void {
+    const statusMap: Record<string, Container["status"]> = {
+      RECEIVED: "unloaded",
+      "IN TRANSIT": "in-transit",
+      CANCELED: "canceled",
+    };
+    for (const row of rows) {
+      const existing = this.getContainer(row.container);
+      if (existing) continue;
+      // Derive period from arrival date
+      let period = "";
+      if (row.arrival) {
+        try {
+          const d = new Date(row.arrival);
+          const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          const day = d.getDate();
+          const wk = day <= 7 ? "Wk1" : day <= 14 ? "Wk2" : day <= 21 ? "Wk3" : "Wk4";
+          period = `${months[d.getMonth()]} ${wk}`;
+        } catch { /* ignore */ }
+      }
+      this.addContainer({
+        container: row.container,
+        status: statusMap[row.status] || "pending",
+        eta: row.arrival,
+        period,
+        po: row.po,
+        cartons: row.cartons,
+        skuCount: row.skuCount,
+        notes: row.notes,
+        inExtensiv: true,
+      });
+    }
+  }
+
+  /** Apply a single change from Extensiv diff */
+  applyExtensivChange(container: string, field: string, value: string): void {
+    const updates: Partial<Container> = {};
+    if (field === "status") updates.status = value as Container["status"];
+    else if (field === "cartons") updates.cartons = parseInt(value) || 0;
+    else if (field === "po") updates.po = value;
+    else if (field === "eta") updates.eta = value;
+    this.updateContainer(container, updates);
   }
 
   // ── Lumper Invoices ──
   getLumperInvoices(): LumperInvoice[] {
-    try {
-      return JSON.parse(localStorage.getItem(KEYS.lumperInvoices) || "[]");
-    } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(KEYS.lumperInvoices) || "[]"); }
+    catch { return []; }
   }
 
   createLumperInvoice(invoice: LumperInvoice): void {
     const invoices = this.getLumperInvoices();
     invoices.push(invoice);
     localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(invoices));
-    // Update container references
-    const containers = this.getContainers();
-    for (const line of invoice.containers) {
-      const idx = containers.findIndex(c => c.containerNumber === line.containerNumber);
-      if (idx !== -1) {
-        containers[idx].lumperInvoice = invoice.invoiceNumber;
-        containers[idx].lumperStatus = "due";
-      }
-    }
-    localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
   }
 
-  markLumperInvoicePaid(invoiceNumber: string): void {
+  markLumperPaid(invoiceNumber: string): void {
     const invoices = this.getLumperInvoices();
-    const inv = invoices.find(i => i.invoiceNumber === invoiceNumber);
+    const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
     if (inv) {
       inv.status = "paid";
       localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(invoices));
-      // Update containers
-      const containers = this.getContainers();
-      for (const line of inv.containers) {
-        const idx = containers.findIndex(c => c.containerNumber === line.containerNumber);
-        if (idx !== -1) containers[idx].lumperStatus = "paid";
-      }
-      localStorage.setItem(KEYS.containers, JSON.stringify(containers));
       this.notify();
     }
   }
 
   // ── Drayage Invoices ──
   getDrayageInvoices(): DrayageInvoice[] {
-    try {
-      return JSON.parse(localStorage.getItem(KEYS.drayageInvoices) || "[]");
-    } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(KEYS.drayageInvoices) || "[]"); }
+    catch { return []; }
   }
 
   createDrayageInvoice(invoice: DrayageInvoice): void {
     const invoices = this.getDrayageInvoices();
     invoices.push(invoice);
     localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
-    // Update container references
-    const containers = this.getContainers();
-    for (const line of invoice.containers) {
-      const idx = containers.findIndex(c => c.containerNumber === line.containerNumber);
-      if (idx !== -1) {
-        containers[idx].maDrayageInvoice = invoice.invoiceNumber;
-        containers[idx].maDrayageStatus = "due";
-      }
-    }
-    localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
   }
 
-  markDrayageInvoicePaid(invoiceNumber: string): void {
+  markDrayagePaid(invoiceNumber: string): void {
     const invoices = this.getDrayageInvoices();
-    const inv = invoices.find(i => i.invoiceNumber === invoiceNumber);
+    const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
     if (inv) {
       inv.status = "paid";
       localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
-      const containers = this.getContainers();
-      for (const line of inv.containers) {
-        const idx = containers.findIndex(c => c.containerNumber === line.containerNumber);
-        if (idx !== -1) containers[idx].maDrayageStatus = "paid";
-      }
-      localStorage.setItem(KEYS.containers, JSON.stringify(containers));
       this.notify();
     }
   }
 
   // ── Client Invoices ──
   getClientInvoices(): ClientInvoice[] {
-    try {
-      return JSON.parse(localStorage.getItem(KEYS.clientInvoices) || "[]");
-    } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(KEYS.clientInvoices) || "[]"); }
+    catch { return []; }
   }
 
   createClientInvoice(invoice: ClientInvoice): void {
@@ -468,10 +503,10 @@ class Store {
     // Mark containers as billed
     const containers = this.getContainers();
     for (const line of invoice.lines) {
-      const idx = containers.findIndex(c => c.containerNumber === line.containerNumber);
+      const idx = containers.findIndex((c) => c.container === line.container);
       if (idx !== -1) {
-        containers[idx].billingStatus = "billed";
-        containers[idx].invoiceNumber = invoice.invoiceNumber;
+        containers[idx].billed = true;
+        containers[idx].billingPeriod = invoice.period;
       }
     }
     localStorage.setItem(KEYS.containers, JSON.stringify(containers));
@@ -483,19 +518,44 @@ class Store {
     return calculateMonthlyStorage(this.getContainers());
   }
 
+  // ── Export DO Tracker format ──
+  exportDOTracker(): Array<{
+    container: string;
+    inExtensiv: string;
+    plReceived: string;
+    doReceived: string;
+    eta: string;
+    status: string;
+    cartons: number;
+    po: string;
+    actionNeeded: string;
+  }> {
+    return this.getContainers()
+      .filter((c) => c.status !== "canceled")
+      .map((c) => {
+        const actions: string[] = [];
+        if (!c.inExtensiv) actions.push("Add to Extensiv");
+        if (!c.plReceived) actions.push("Need PL");
+        if (!c.doReceived) actions.push("Need DO");
+        if (c.status === "pending" || c.status === "in-transit") actions.push("Awaiting arrival");
+        return {
+          container: c.container,
+          inExtensiv: c.inExtensiv ? "YES" : "NO",
+          plReceived: c.plReceived ? "YES" : "NO",
+          doReceived: c.doReceived ? "YES" : "NO",
+          eta: c.eta,
+          status: c.status.toUpperCase(),
+          cartons: c.cartons,
+          po: c.po,
+          actionNeeded: actions.length > 0 ? actions.join(", ") : "Complete",
+        };
+      });
+  }
+
   // ── Reset ──
   resetToSeed(): void {
-    localStorage.removeItem(KEYS.initialized);
-    localStorage.removeItem(KEYS.containers);
-    localStorage.removeItem(KEYS.lumperInvoices);
-    localStorage.removeItem(KEYS.drayageInvoices);
-    localStorage.removeItem(KEYS.clientInvoices);
-    // Re-seed
-    localStorage.setItem(KEYS.containers, JSON.stringify(seedContainers));
-    localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(seedLumperInvoices));
-    localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(seedDrayageInvoices));
-    localStorage.setItem(KEYS.clientInvoices, JSON.stringify([]));
-    localStorage.setItem(KEYS.initialized, "true");
+    Object.values(KEYS).forEach((k) => localStorage.removeItem(k));
+    this.seedAll();
     this.notify();
   }
 }

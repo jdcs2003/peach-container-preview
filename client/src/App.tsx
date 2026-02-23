@@ -11,6 +11,8 @@ import LumperInvoices from "./pages/LumperInvoices";
 import DrayageInvoices from "./pages/DrayageInvoices";
 import BatchInvoice from "./pages/BatchInvoice";
 import ClientInvoices from "./pages/ClientInvoices";
+import ExtensivImport from "./pages/ExtensivImport";
+import InboundTracking from "./pages/InboundTracking";
 
 function Router() {
   return (
@@ -18,6 +20,8 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/container/new" component={AddContainer} />
       <Route path="/container/:id" component={ContainerDetail} />
+      <Route path="/inbound-tracking" component={InboundTracking} />
+      <Route path="/extensiv-import" component={ExtensivImport} />
       <Route path="/lumper-invoices" component={LumperInvoices} />
       <Route path="/drayage-invoices" component={DrayageInvoices} />
       <Route path="/client-invoices" component={ClientInvoices} />

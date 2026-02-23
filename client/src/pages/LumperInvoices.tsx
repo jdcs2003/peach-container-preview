@@ -1,214 +1,219 @@
-/*
- * Lumper Invoices — Fernando Palma unload invoices
- * Shows each invoice with container-level detail, outbound work, and totals
- */
-import { useState } from "react";
-import { Link } from "wouter";
 import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { store, type LumperInvoice } from "@/data/store";
 import { useStore } from "@/hooks/useStore";
-import { type LumperInvoice } from "@/data/store";
 import { exportLumperInvoiceToExcel } from "@/lib/exportExcel";
-import { Button } from "@/components/ui/button";
-import { HardHat, ChevronDown, ChevronUp, ArrowLeft, FileText, CheckCircle2, AlertCircle, Download, Check } from "lucide-react";
+import { Link } from "wouter";
+import { useState } from "react";
+import { ArrowLeft, Download, CheckCircle2, Clock, Plus, HardHat, FileText, AlertCircle, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { toast } from "sonner";
 
-const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
-
-function InvoiceCard({ invoice, onMarkPaid }: { invoice: LumperInvoice; onMarkPaid: (num: string) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const isPaid = invoice.status === "paid";
-
-  return (
-    <Card className={`border-l-4 ${isPaid ? "border-l-emerald-500" : "border-l-red-500"}`}>
-      <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <FileText className={`w-5 h-5 ${isPaid ? "text-emerald-600" : "text-red-600"}`} />
-            <div>
-              <CardTitle className="text-sm font-semibold font-mono">{invoice.invoiceNumber}</CardTitle>
-              <p className="text-xs text-muted-foreground">{invoice.invoiceDate} · {invoice.vendor} · {invoice.containers.length} containers</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="font-mono font-bold text-lg">{fmt(invoice.total)}</div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
-                {isPaid ? "PAID" : "DUE"}
-              </span>
-            </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); exportLumperInvoiceToExcel(invoice); toast.success("Excel downloaded"); }}>
-                <Download className="w-3 h-3" />
-              </Button>
-              {!isPaid && (
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600" onClick={(e) => { e.stopPropagation(); onMarkPaid(invoice.invoiceNumber); }}>
-                  <Check className="w-3 h-3" />
-                </Button>
-              )}
-            </div>
-            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-          </div>
-        </div>
-      </CardHeader>
-
-      {expanded && (
-        <CardContent className="pt-0 space-y-4">
-          {/* Container Unloads */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Container Unloads</h4>
-            <div className="border rounded-md overflow-hidden">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="px-3 py-2 text-left font-semibold">Container #</th>
-                    <th className="px-3 py-2 text-right font-semibold">SKUs</th>
-                    <th className="px-3 py-2 text-right font-semibold">Cases</th>
-                    <th className="px-3 py-2 text-left font-semibold">Date Unloaded</th>
-                    <th className="px-3 py-2 text-right font-semibold">Rate</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {invoice.containers.map((c, i) => (
-                    <tr key={i} className="hover:bg-muted/30">
-                      <td className="px-3 py-1.5">
-                        <Link href={`/container/${c.containerNumber}`}>
-                          <span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.containerNumber}</span>
-                        </Link>
-                      </td>
-                      <td className="px-3 py-1.5 text-right font-mono">{c.skus}</td>
-                      <td className="px-3 py-1.5 text-right font-mono">{c.cases.toLocaleString()}</td>
-                      <td className="px-3 py-1.5 font-mono text-muted-foreground">{c.dateUnloaded}</td>
-                      <td className="px-3 py-1.5 text-right font-mono font-medium">{fmt(c.payRate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-muted/30 font-semibold">
-                    <td className="px-3 py-2" colSpan={4}>Unload Subtotal</td>
-                    <td className="px-3 py-2 text-right font-mono">{fmt(invoice.subtotal)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-
-          {/* Outbound Work */}
-          {invoice.outbound && invoice.outbound.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Outbound / Labeling Work</h4>
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-muted/50">
-                      <th className="px-3 py-2 text-left font-semibold">Date</th>
-                      <th className="px-3 py-2 text-right font-semibold">Boxes</th>
-                      <th className="px-3 py-2 text-right font-semibold">Label Rate</th>
-                      <th className="px-3 py-2 text-right font-semibold">Case Rate</th>
-                      <th className="px-3 py-2 text-right font-semibold">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {invoice.outbound.map((ob, i) => (
-                      <tr key={i} className="hover:bg-muted/30">
-                        <td className="px-3 py-1.5 font-mono text-muted-foreground">{ob.date}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{ob.boxes.toLocaleString()}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">${ob.perLabel.toFixed(2)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">${ob.perCase.toFixed(2)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono font-medium">{fmt(ob.boxes * (ob.perLabel + ob.perCase))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-muted/30 font-semibold">
-                      <td className="px-3 py-2" colSpan={4}>Outbound Subtotal</td>
-                      <td className="px-3 py-2 text-right font-mono">{fmt(invoice.outboundSubtotal || 0)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Additional Fees & Total */}
-          <div className="border rounded-md p-3 bg-muted/20 space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Unload Subtotal</span><span className="font-mono">{fmt(invoice.subtotal)}</span></div>
-            {invoice.outboundSubtotal && <div className="flex justify-between"><span className="text-muted-foreground">Outbound Subtotal</span><span className="font-mono">{fmt(invoice.outboundSubtotal)}</span></div>}
-            {invoice.adminFee && <div className="flex justify-between"><span className="text-muted-foreground">Admin Fee</span><span className="font-mono">{fmt(invoice.adminFee)}</span></div>}
-            {invoice.trainingFee && <div className="flex justify-between"><span className="text-muted-foreground">Training Fee</span><span className="font-mono">{fmt(invoice.trainingFee)}</span></div>}
-            {invoice.waitingFee && <div className="flex justify-between"><span className="text-muted-foreground">Waiting Fee</span><span className="font-mono">{fmt(invoice.waitingFee)}</span></div>}
-            <div className="flex justify-between border-t pt-1.5 font-bold text-base">
-              <span>Invoice Total</span>
-              <span className="font-mono">{fmt(invoice.total)}</span>
-            </div>
-          </div>
-        </CardContent>
-      )}
-    </Card>
-  );
-}
+const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function LumperInvoices() {
-  const { store } = useStore();
-  const lumperInvoices = store.getLumperInvoices();
-  const summary = {
-    totalPaid: lumperInvoices.filter(i => i.status === "paid").reduce((s, i) => s + i.total, 0),
-    totalDue: lumperInvoices.filter(i => i.status === "due").reduce((s, i) => s + i.total, 0),
-    totalAll: lumperInvoices.reduce((s, i) => s + i.total, 0),
-    totalContainers: lumperInvoices.reduce((s, i) => s + i.containers.length, 0),
+  const invoices = useStore(() => store.getLumperInvoices());
+  const containers = useStore(() => store.getContainers());
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showPush, setShowPush] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Containers that are unloaded but not yet on any lumper invoice
+  const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
+  const pushable = containers.filter(
+    (c) => (c.status === "unloaded" || c.status === "received") && c.fernandoUnloadDate && !invoicedContainers.has(c.container)
+  );
+
+  const totalPaid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
+  const totalDue = invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
+  const totalContainers = invoices.reduce((s, i) => s + i.lines.length, 0);
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   };
-  const handleMarkPaid = (num: string) => { store.markLumperInvoicePaid(num); toast.success(`Invoice ${num} marked as paid`); };
+
+  const createInvoice = () => {
+    if (selected.size === 0) return;
+    const selContainers = containers.filter((c) => selected.has(c.container));
+    const lines = selContainers.map((c) => ({
+      container: c.container,
+      cartons: c.cartons,
+      skuCount: c.skuCount,
+      rate: c.fernandoRate,
+      unloadDate: c.fernandoUnloadDate || new Date().toISOString().slice(0, 10),
+    }));
+    const total = lines.reduce((s, l) => s + l.rate, 0);
+    const invNum = `FP-2026-${String(invoices.length + 1).padStart(3, "0")}`;
+    store.createLumperInvoice({
+      invoiceNumber: invNum,
+      invoiceDate: new Date().toISOString().slice(0, 10),
+      vendor: "Fernando Palma",
+      status: "due",
+      lines,
+      total,
+    });
+    setSelected(new Set());
+    setShowPush(false);
+    toast.success(`Created lumper invoice ${invNum} for ${selContainers.length} containers`);
+  };
 
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Link href="/">
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer"><ArrowLeft className="w-5 h-5" /></span>
-          </Link>
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Lumper Invoices</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Fernando Palma — Container Unload & Outbound Work</p>
+            <Link href="/"><span className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mb-1 cursor-pointer"><ArrowLeft className="w-3 h-3" /> Dashboard</span></Link>
+            <h1 className="text-2xl font-bold tracking-tight">Lumper Invoices</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Fernando Palma — Container Unload Services</p>
+          </div>
+          <button onClick={() => setShowPush(!showPush)} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5" /> Push to Lumper Payable
+          </button>
+        </div>
+
+        {/* Summary */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-emerald-700">{fmt(totalPaid)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Paid</div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <AlertCircle className="w-5 h-5 text-red-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-red-600">{fmt(totalDue)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Amount Due</div>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <HardHat className="w-5 h-5 text-blue-600 mb-1" />
+            <div className="text-xl font-bold font-mono">{totalContainers}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Unloaded</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <FileText className="w-5 h-5 text-muted-foreground mb-1" />
+            <div className="text-xl font-bold font-mono">{invoices.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Invoices</div>
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="p-4">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
-              <div className="text-xl font-bold font-mono text-emerald-700">{fmt(summary.totalPaid)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Paid</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent className="p-4">
-              <AlertCircle className="w-5 h-5 text-red-600 mb-1" />
-              <div className="text-xl font-bold font-mono text-red-600">{fmt(summary.totalDue)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Amount Due</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-4">
-              <HardHat className="w-5 h-5 text-blue-600 mb-1" />
-              <div className="text-xl font-bold font-mono">{summary.totalContainers}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Unloaded</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-slate-400">
-            <CardContent className="p-4">
-              <FileText className="w-5 h-5 text-slate-600 mb-1" />
-              <div className="text-xl font-bold font-mono">{lumperInvoices.length}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Invoices</div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Push to Lumper Payable */}
+        {showPush && (
+          <div className="bg-card border-2 border-primary/20 rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+              <HardHat className="w-4 h-4" /> Select Unloaded Containers to Create Lumper Invoice
+            </h3>
+            {pushable.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No unloaded containers without a lumper invoice. Mark containers as unloaded first.</p>
+            ) : (
+              <>
+                <div className="overflow-x-auto mb-3">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/50 text-muted-foreground">
+                        <th className="text-center px-3 py-2 w-8">
+                          <input type="checkbox" checked={selected.size === pushable.length && pushable.length > 0}
+                            onChange={() => { selected.size === pushable.length ? setSelected(new Set()) : setSelected(new Set(pushable.map((c) => c.container))); }} />
+                        </th>
+                        <th className="text-left px-3 py-2 font-medium">Container</th>
+                        <th className="text-left px-3 py-2 font-medium">Period</th>
+                        <th className="text-right px-3 py-2 font-medium">Cartons</th>
+                        <th className="text-right px-3 py-2 font-medium">SKUs</th>
+                        <th className="text-right px-3 py-2 font-medium">Rate</th>
+                        <th className="text-left px-3 py-2 font-medium">Unload Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pushable.map((c) => (
+                        <tr key={c.container} className="border-t border-border hover:bg-muted/30">
+                          <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
+                          <td className="px-3 py-2 font-mono font-semibold">{c.container}</td>
+                          <td className="px-3 py-2">{c.period}</td>
+                          <td className="px-3 py-2 text-right font-mono">{c.cartons.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right font-mono">{c.skuCount}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(c.fernandoRate)}</td>
+                          <td className="px-3 py-2">{c.fernandoUnloadDate}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={createInvoice} disabled={selected.size === 0}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90">
+                  Create Invoice ({selected.size} containers · {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.fernandoRate, 0))})
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Invoice List */}
         <div className="space-y-3">
-          {lumperInvoices.map(inv => (
-            <InvoiceCard key={inv.invoiceNumber} invoice={inv} onMarkPaid={handleMarkPaid} />
+          {invoices.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <HardHat className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>No lumper invoices yet. Push unloaded containers to create one.</p>
+            </div>
+          )}
+          {invoices.map((inv) => (
+            <div key={inv.invoiceNumber} className={`bg-card border rounded-lg overflow-hidden border-l-4 ${inv.status === "paid" ? "border-l-emerald-500" : "border-l-red-500"}`}>
+              <div className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/30"
+                onClick={() => setExpanded(expanded === inv.invoiceNumber ? null : inv.invoiceNumber)}>
+                <div className="flex items-center gap-3">
+                  <FileText className={`w-5 h-5 ${inv.status === "paid" ? "text-emerald-600" : "text-red-600"}`} />
+                  <div>
+                    <span className="font-mono font-semibold text-sm">{inv.invoiceNumber}</span>
+                    <p className="text-xs text-muted-foreground">{inv.invoiceDate} · {inv.lines.length} containers</p>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${inv.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                    {inv.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono font-bold text-lg">{fmt(inv.total)}</span>
+                  <button onClick={(e) => { e.stopPropagation(); exportLumperInvoiceToExcel(inv); toast.success("Exported"); }} className="p-1 hover:bg-accent rounded"><Download className="w-3.5 h-3.5" /></button>
+                  {inv.status !== "paid" && (
+                    <button onClick={(e) => { e.stopPropagation(); store.markLumperPaid(inv.invoiceNumber); toast.success("Marked as paid"); }}
+                      className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Mark Paid
+                    </button>
+                  )}
+                  {expanded === inv.invoiceNumber ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </div>
+              </div>
+              {expanded === inv.invoiceNumber && (
+                <div className="border-t border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/50 text-muted-foreground">
+                        <th className="text-left px-3 py-2 font-medium">Container</th>
+                        <th className="text-right px-3 py-2 font-medium">Cartons</th>
+                        <th className="text-right px-3 py-2 font-medium">SKUs</th>
+                        <th className="text-left px-3 py-2 font-medium">Unload Date</th>
+                        <th className="text-right px-3 py-2 font-medium">Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inv.lines.map((l) => (
+                        <tr key={l.container} className="border-t border-border hover:bg-muted/30">
+                          <td className="px-3 py-2">
+                            <Link href={`/container/${l.container}`}><span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{l.container}</span></Link>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">{l.cartons.toLocaleString()}</td>
+                          <td className="px-3 py-2 text-right font-mono">{l.skuCount}</td>
+                          <td className="px-3 py-2">{l.unloadDate}</td>
+                          <td className="px-3 py-2 text-right font-mono font-medium">{fmt(l.rate)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-border bg-muted/30">
+                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">Total</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">{fmt(inv.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>

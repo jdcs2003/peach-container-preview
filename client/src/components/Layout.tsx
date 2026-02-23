@@ -1,17 +1,20 @@
 import { Link, useLocation } from "wouter";
 import {
   Package, Home, ChevronRight, Truck, HardHat,
-  PlusCircle, FileText, DollarSign, Layers
+  PlusCircle, FileText, DollarSign, Layers,
+  ClipboardList, Upload
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Home },
+  { href: "/inbound-tracking", label: "Inbound Tracking", icon: ClipboardList },
   { href: "/container/new", label: "Add Container", icon: PlusCircle },
-  { href: "/batch-invoice", label: "Batch Invoice", icon: Layers },
+  { href: "/extensiv-import", label: "Extensiv Import", icon: Upload },
   { type: "divider" as const, label: "Payables" },
   { href: "/lumper-invoices", label: "Lumper Invoices", icon: HardHat },
   { href: "/drayage-invoices", label: "Drayage Invoices", icon: Truck },
   { type: "divider" as const, label: "Receivables" },
+  { href: "/batch-invoice", label: "Batch Invoice", icon: Layers },
   { href: "/client-invoices", label: "Client Invoices", icon: DollarSign },
 ];
 
@@ -20,9 +23,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
       <aside className="w-[220px] bg-sidebar text-sidebar-foreground flex flex-col shrink-0">
-        {/* Brand */}
         <div className="p-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -35,8 +36,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 p-2 space-y-0.5">
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
           {navItems.map((item, idx) => {
             if ("type" in item && item.type === "divider") {
               return (
@@ -59,7 +59,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <span>{navItem.label}</span>
                   {isActive && <ChevronRight className="w-3 h-3 ml-auto opacity-50" />}
                 </div>
               </Link>
@@ -67,7 +67,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Footer */}
         <div className="p-3 border-t border-sidebar-border">
           <div className="text-[10px] text-sidebar-foreground/40 leading-relaxed">
             144 Old Elloree Rd<br />
@@ -77,7 +76,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Main content */}
       <main className="flex-1 overflow-y-auto bg-background">
         <div className="p-6">
           {children}

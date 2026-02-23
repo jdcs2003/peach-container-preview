@@ -1,220 +1,186 @@
-/*
- * Drayage Invoices — M&A Transport
- * Uses reactive store for live data
- */
-import { useState } from "react";
-import { Link } from "wouter";
 import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { store, type DrayageInvoice } from "@/data/store";
 import { useStore } from "@/hooks/useStore";
-import { type DrayageInvoice } from "@/data/store";
 import { exportDrayageInvoiceToExcel } from "@/lib/exportExcel";
-import { Truck, ChevronDown, ChevronUp, ArrowLeft, FileText, CheckCircle2, AlertCircle, Download, Check } from "lucide-react";
+import { Link } from "wouter";
+import { useState } from "react";
+import { ArrowLeft, Download, CheckCircle2, Plus, Truck, FileText, AlertCircle, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { toast } from "sonner";
 
-const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
-
-function InvoiceCard({ invoice, onMarkPaid }: { invoice: DrayageInvoice; onMarkPaid: (num: string) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const isPaid = invoice.status === "paid";
-  const totalChassis = invoice.containers.reduce((s, c) => s + c.chassisDays, 0);
-
-  return (
-    <Card className={`border-l-4 ${isPaid ? "border-l-emerald-500" : "border-l-red-500"}`}>
-      <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Truck className={`w-5 h-5 ${isPaid ? "text-emerald-600" : "text-red-600"}`} />
-            <div>
-              <CardTitle className="text-sm font-semibold font-mono">{invoice.invoiceNumber}</CardTitle>
-              <p className="text-xs text-muted-foreground">{invoice.invoiceDate} · {invoice.containers.length} containers · {totalChassis} chassis days</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="font-mono font-bold text-lg">{fmt(invoice.total)}</div>
-              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${isPaid ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
-                {isPaid ? "PAID" : "DUE"}
-              </span>
-            </div>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={(e) => { e.stopPropagation(); exportDrayageInvoiceToExcel(invoice); toast.success("Excel downloaded"); }}>
-                <Download className="w-3 h-3" />
-              </Button>
-              {!isPaid && (
-                <Button variant="ghost" size="sm" className="h-7 px-2 text-emerald-600" onClick={(e) => { e.stopPropagation(); onMarkPaid(invoice.invoiceNumber); }}>
-                  <Check className="w-3 h-3" />
-                </Button>
-              )}
-            </div>
-            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-          </div>
-        </div>
-      </CardHeader>
-
-      {expanded && (
-        <CardContent className="pt-0 space-y-4">
-          <div className="border rounded-md overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="px-3 py-2 text-left font-semibold">Container #</th>
-                  <th className="px-3 py-2 text-left font-semibold">Pull Date</th>
-                  <th className="px-3 py-2 text-left font-semibold">Return Date</th>
-                  <th className="px-3 py-2 text-right font-semibold">Chassis Days</th>
-                  <th className="px-3 py-2 text-right font-semibold">Container Fee</th>
-                  <th className="px-3 py-2 text-right font-semibold">Chassis Fee</th>
-                  <th className="px-3 py-2 text-right font-semibold">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {invoice.containers.map((c, i) => (
-                  <tr key={i} className="hover:bg-muted/30">
-                    <td className="px-3 py-1.5">
-                      <Link href={`/container/${c.containerNumber}`}>
-                        <span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.containerNumber}</span>
-                      </Link>
-                    </td>
-                    <td className="px-3 py-1.5 font-mono text-muted-foreground">{c.pullDate || "—"}</td>
-                    <td className="px-3 py-1.5 font-mono text-muted-foreground">{c.returnDate || "—"}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{c.chassisDays}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{fmt(c.containerFee)}</td>
-                    <td className="px-3 py-1.5 text-right font-mono">{fmt(c.chassisFee)}</td>
-                    <td className="px-3 py-1.5 text-right font-mono font-medium">{fmt(c.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-muted/30 font-semibold">
-                  <td className="px-3 py-2" colSpan={3}>Total</td>
-                  <td className="px-3 py-2 text-right font-mono">{totalChassis}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmt(invoice.containers.reduce((s, c) => s + c.containerFee, 0))}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmt(invoice.containers.reduce((s, c) => s + c.chassisFee, 0))}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmt(invoice.total)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          <div className="text-xs text-muted-foreground bg-muted/20 rounded-md p-3">
-            <strong>Rates:</strong> $425/container + $30/day chassis (pay to M&A) → Bill client $495/container + $40/day chassis
-          </div>
-        </CardContent>
-      )}
-    </Card>
-  );
-}
+const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function DrayageInvoices() {
-  const { store } = useStore();
-  const invoices = store.getDrayageInvoices();
-  const allContainers = store.getContainers();
+  const invoices = useStore(() => store.getDrayageInvoices());
+  const containers = useStore(() => store.getContainers());
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showPush, setShowPush] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const totalPaid = invoices.filter(i => i.status === "paid").reduce((s, i) => s + i.total, 0);
-  const totalDue = invoices.filter(i => i.status === "due").reduce((s, i) => s + i.total, 0);
-  const totalContainers = invoices.reduce((s, i) => s + i.containers.length, 0);
-  const outNow = allContainers.filter(c => c.status === "in_transit").length;
+  const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
+  const pushable = containers.filter((c) => c.maPickup && !invoicedContainers.has(c.container) && c.status !== "canceled");
 
-  const handleMarkPaid = (num: string) => { store.markDrayageInvoicePaid(num); toast.success(`Invoice ${num} marked as paid`); };
+  const totalPaid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
+  const totalDue = invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
+  const totalContainers = invoices.reduce((s, i) => s + i.lines.length, 0);
 
-  // Pending containers not yet on an M&A invoice
-  const pendingMA = allContainers.filter(c => c.maDrayageStatus === "pending" && c.drayageSource === "m&a");
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  };
+
+  const createInvoice = () => {
+    if (selected.size === 0) return;
+    const sel = containers.filter((c) => selected.has(c.container));
+    const lines = sel.map((c) => ({
+      container: c.container, pickup: c.maPickup, returnDate: c.maReturn,
+      chassisDays: c.maChassisDays, containerFee: c.maDrayageCost, chassisFee: c.maChassisCost,
+      total: c.maDrayageCost + c.maChassisCost,
+    }));
+    const total = lines.reduce((s, l) => s + l.total, 0);
+    const invNum = `MA-2026-${String(invoices.length + 1).padStart(3, "0")}`;
+    store.createDrayageInvoice({ invoiceNumber: invNum, invoiceDate: new Date().toISOString().slice(0, 10), vendor: "M&A Transport", status: "due", lines, total });
+    setSelected(new Set()); setShowPush(false);
+    toast.success(`Created drayage invoice ${invNum} for ${sel.length} containers`);
+  };
 
   return (
     <Layout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <Link href="/">
-            <span className="text-muted-foreground hover:text-foreground cursor-pointer"><ArrowLeft className="w-5 h-5" /></span>
-          </Link>
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Drayage Invoices</h1>
+            <Link href="/"><span className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 mb-1 cursor-pointer"><ArrowLeft className="w-3 h-3" /> Dashboard</span></Link>
+            <h1 className="text-2xl font-bold tracking-tight">Drayage Invoices</h1>
             <p className="text-sm text-muted-foreground mt-0.5">M&A Transport — Container Drayage & Chassis</p>
+          </div>
+          <button onClick={() => setShowPush(!showPush)} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5" /> Push to Drayage Payable
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-emerald-700">{fmt(totalPaid)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Paid</div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <AlertCircle className="w-5 h-5 text-red-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-red-600">{fmt(totalDue)}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Amount Due</div>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <Truck className="w-5 h-5 text-blue-600 mb-1" />
+            <div className="text-xl font-bold font-mono">{totalContainers}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Hauled</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <FileText className="w-5 h-5 text-muted-foreground mb-1" />
+            <div className="text-xl font-bold font-mono">{invoices.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Invoices</div>
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="p-4">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
-              <div className="text-xl font-bold font-mono text-emerald-700">{fmt(totalPaid)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Paid</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent className="p-4">
-              <AlertCircle className="w-5 h-5 text-red-600 mb-1" />
-              <div className="text-xl font-bold font-mono text-red-600">{fmt(totalDue)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Amount Due</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-4">
-              <Truck className="w-5 h-5 text-blue-600 mb-1" />
-              <div className="text-xl font-bold font-mono">{totalContainers}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Pulled</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-amber-500">
-            <CardContent className="p-4">
-              <AlertCircle className="w-5 h-5 text-amber-600 mb-1" />
-              <div className="text-xl font-bold font-mono text-amber-700">{outNow}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Currently Out</div>
-            </CardContent>
-          </Card>
-        </div>
+        {showPush && (
+          <div className="bg-card border-2 border-primary/20 rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2"><Truck className="w-4 h-4" /> Select Containers to Create Drayage Invoice</h3>
+            {pushable.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No containers with M&A pickup data that aren't already on a drayage invoice.</p>
+            ) : (
+              <>
+                <div className="overflow-x-auto mb-3">
+                  <table className="w-full text-xs">
+                    <thead><tr className="bg-muted/50 text-muted-foreground">
+                      <th className="text-center px-3 py-2 w-8"><input type="checkbox" checked={selected.size === pushable.length && pushable.length > 0} onChange={() => { selected.size === pushable.length ? setSelected(new Set()) : setSelected(new Set(pushable.map((c) => c.container))); }} /></th>
+                      <th className="text-left px-3 py-2 font-medium">Container</th>
+                      <th className="text-left px-3 py-2 font-medium">Pickup</th>
+                      <th className="text-left px-3 py-2 font-medium">Return</th>
+                      <th className="text-right px-3 py-2 font-medium">Days</th>
+                      <th className="text-right px-3 py-2 font-medium">Drayage</th>
+                      <th className="text-right px-3 py-2 font-medium">Chassis</th>
+                      <th className="text-right px-3 py-2 font-medium">Total</th>
+                    </tr></thead>
+                    <tbody>
+                      {pushable.map((c) => (
+                        <tr key={c.container} className="border-t border-border hover:bg-muted/30">
+                          <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
+                          <td className="px-3 py-2 font-mono font-semibold">{c.container}</td>
+                          <td className="px-3 py-2">{c.maPickup}</td>
+                          <td className="px-3 py-2">{c.maReturn || "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono">{c.maChassisDays}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(c.maDrayageCost)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(c.maChassisCost)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(c.maDrayageCost + c.maChassisCost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button onClick={createInvoice} disabled={selected.size === 0} className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90">
+                  Create Invoice ({selected.size} containers · {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.maDrayageCost + c.maChassisCost, 0))})
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
-        {/* Invoice List */}
         <div className="space-y-3">
-          {invoices.map(inv => (
-            <InvoiceCard key={inv.invoiceNumber} invoice={inv} onMarkPaid={handleMarkPaid} />
+          {invoices.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground"><Truck className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No drayage invoices yet.</p></div>
+          )}
+          {invoices.map((inv) => (
+            <div key={inv.invoiceNumber} className={`bg-card border rounded-lg overflow-hidden border-l-4 ${inv.status === "paid" ? "border-l-emerald-500" : "border-l-red-500"}`}>
+              <div className="p-3 flex items-center justify-between cursor-pointer hover:bg-muted/30" onClick={() => setExpanded(expanded === inv.invoiceNumber ? null : inv.invoiceNumber)}>
+                <div className="flex items-center gap-3">
+                  <Truck className={`w-5 h-5 ${inv.status === "paid" ? "text-emerald-600" : "text-red-600"}`} />
+                  <div>
+                    <span className="font-mono font-semibold text-sm">{inv.invoiceNumber}</span>
+                    <p className="text-xs text-muted-foreground">{inv.invoiceDate} · {inv.lines.length} containers</p>
+                  </div>
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${inv.status === "paid" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>{inv.status}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono font-bold text-lg">{fmt(inv.total)}</span>
+                  <button onClick={(e) => { e.stopPropagation(); exportDrayageInvoiceToExcel(inv); toast.success("Exported"); }} className="p-1 hover:bg-accent rounded"><Download className="w-3.5 h-3.5" /></button>
+                  {inv.status !== "paid" && (
+                    <button onClick={(e) => { e.stopPropagation(); store.markDrayagePaid(inv.invoiceNumber); toast.success("Marked as paid"); }} className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 flex items-center gap-1"><Check className="w-3 h-3" /> Mark Paid</button>
+                  )}
+                  {expanded === inv.invoiceNumber ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                </div>
+              </div>
+              {expanded === inv.invoiceNumber && (
+                <div className="border-t border-border">
+                  <table className="w-full text-xs">
+                    <thead><tr className="bg-muted/50 text-muted-foreground">
+                      <th className="text-left px-3 py-2 font-medium">Container</th>
+                      <th className="text-left px-3 py-2 font-medium">Pickup</th>
+                      <th className="text-left px-3 py-2 font-medium">Return</th>
+                      <th className="text-right px-3 py-2 font-medium">Days</th>
+                      <th className="text-right px-3 py-2 font-medium">Drayage</th>
+                      <th className="text-right px-3 py-2 font-medium">Chassis</th>
+                      <th className="text-right px-3 py-2 font-medium">Total</th>
+                    </tr></thead>
+                    <tbody>
+                      {inv.lines.map((l) => (
+                        <tr key={l.container} className="border-t border-border hover:bg-muted/30">
+                          <td className="px-3 py-2"><Link href={`/container/${l.container}`}><span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{l.container}</span></Link></td>
+                          <td className="px-3 py-2">{l.pickup}</td>
+                          <td className="px-3 py-2">{l.returnDate || "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono">{l.chassisDays}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(l.containerFee)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(l.chassisFee)}</td>
+                          <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(l.total)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-border bg-muted/30">
+                        <td colSpan={6} className="px-3 py-2 font-semibold text-right">Total</td>
+                        <td className="px-3 py-2 text-right font-mono font-bold">{fmt(inv.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           ))}
         </div>
-
-        {/* Pending Containers */}
-        {pendingMA.length > 0 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Pending — Not Yet Invoiced by M&A</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-muted/50">
-                      <th className="px-3 py-2 text-left font-semibold">Container #</th>
-                      <th className="px-3 py-2 text-left font-semibold">Status</th>
-                      <th className="px-3 py-2 text-left font-semibold">Pull Date</th>
-                      <th className="px-3 py-2 text-right font-semibold">Est. Chassis Days</th>
-                      <th className="px-3 py-2 text-right font-semibold">Est. Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {pendingMA.map(c => (
-                      <tr key={c.id} className="hover:bg-muted/30">
-                        <td className="px-3 py-1.5">
-                          <Link href={`/container/${c.containerNumber}`}>
-                            <span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.containerNumber}</span>
-                          </Link>
-                        </td>
-                        <td className="px-3 py-1.5">
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${c.status === "in_transit" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
-                            {c.status.replace("_", " ")}
-                          </span>
-                        </td>
-                        <td className="px-3 py-1.5 font-mono text-muted-foreground">{c.pullDate || "TBD"}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{c.chassisDays}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{fmt(c.maDrayageTotal)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </Layout>
   );

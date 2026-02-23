@@ -1,107 +1,55 @@
-/**
- * Design: Industrial Logistics — Peach/Orange branding, slate sidebar
- * Dense data table, monospace financials, color-coded statuses
- * Now uses the reactive store for live data.
- * Includes monthly storage minimum floor logic.
- */
-import { useState, useMemo } from "react";
-import { Link } from "wouter";
-import { useStore } from "@/hooks/useStore";
-import { RATES } from "@/data/containers";
-import { exportContainersToExcel } from "@/lib/exportExcel";
 import Layout from "@/components/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { store, RATES, type Container } from "@/data/store";
+import { useStore } from "@/hooks/useStore";
+import { Link } from "wouter";
 import {
-  Package, TrendingUp, TrendingDown, BarChart3,
-  Truck, Clock, Search, ArrowUpRight, PlusCircle,
-  Layers, Download, HardHat, DollarSign, Warehouse, AlertTriangle
+  Package, DollarSign, TrendingUp, TrendingDown, Truck, HardHat,
+  Clock, AlertCircle, CheckCircle2, ArrowUpRight, Warehouse, AlertTriangle,
+  BarChart3, Download
 } from "lucide-react";
+import { exportContainersToExcel } from "@/lib/exportExcel";
 import { toast } from "sonner";
 
-const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : fmt(n);
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    unloaded: "bg-emerald-100 text-emerald-800",
-    received: "bg-blue-100 text-blue-800",
-    in_transit: "bg-amber-100 text-amber-800",
+    unloaded: "bg-emerald-100 text-emerald-700",
+    billed: "bg-blue-100 text-blue-700",
+    "in-transit": "bg-amber-100 text-amber-700",
+    received: "bg-teal-100 text-teal-700",
     pending: "bg-slate-100 text-slate-600",
-    projected: "bg-purple-100 text-purple-700",
-  };
-  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{status.replace("_", " ")}</span>;
-}
-
-function BillingBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    billed: "bg-emerald-100 text-emerald-800",
-    pending: "bg-amber-100 text-amber-800",
-    unbilled: "bg-red-100 text-red-700",
+    projected: "bg-purple-100 text-purple-600",
+    canceled: "bg-red-100 text-red-600",
   };
   return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{status}</span>;
 }
 
 export default function Dashboard() {
-  const { store } = useStore();
-  const allContainers = store.getContainers();
-  const lumperInvoices = store.getLumperInvoices();
-  const drayageInvoices = store.getDrayageInvoices();
-  const monthlyStorage = store.getMonthlyStorageSummary();
+  const containers = useStore(() => store.getContainers());
+  const monthlyStorage = useStore(() => store.getMonthlyStorageSummary());
+  const lumperInvoices = useStore(() => store.getLumperInvoices());
+  const drayageInvoices = useStore(() => store.getDrayageInvoices());
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [periodFilter, setPeriodFilter] = useState<string>("all");
+  const active = containers.filter((c) => c.status !== "canceled");
+  const unloaded = active.filter((c) => c.status === "unloaded" || c.status === "billed");
+  const inTransit = active.filter((c) => c.status === "in-transit");
+  const pending = active.filter((c) => c.status === "pending" || c.status === "projected");
+  const unbilled = active.filter((c) => !c.billed && (c.status === "unloaded" || c.status === "received"));
 
-  const stats = useMemo(() => {
-    const unloaded = allContainers.filter(c => c.status === "unloaded");
-    // Per-container revenue (before monthly storage adjustment)
-    const containerRev = unloaded.reduce((s, c) => s + c.totalRevenue, 0);
-    const totalCost = unloaded.reduce((s, c) => s + c.totalCost, 0);
-    const inTransit = allContainers.filter(c => c.status === "in_transit").length;
-    const pending = allContainers.filter(c => c.status === "pending").length;
-    const projected = allContainers.filter(c => c.status === "projected").length;
+  const totalRev = active.reduce((s, c) => s + c.totalRevenue, 0);
+  const totalCost = active.reduce((s, c) => s + c.totalCost, 0);
+  const storageTopUp = monthlyStorage.reduce((s, m) => s + m.minimumTopUp, 0);
+  const storageProRate = monthlyStorage.reduce((s, m) => s + m.proRateDiscount, 0);
+  const netStorageAdj = storageTopUp - storageProRate;
+  const adjustedRev = totalRev + netStorageAdj;
+  const margin = adjustedRev - totalCost;
 
-    // Monthly storage minimum top-ups (additional revenue from floor)
-    const storageTopUp = monthlyStorage.reduce((s, m) => s + m.minimumTopUp, 0);
-    const storageProRate = monthlyStorage.reduce((s, m) => s + m.proRateDiscount, 0);
-    const netStorageAdjustment = storageTopUp - storageProRate;
-
-    // Adjusted total revenue = per-container totals + monthly storage adjustments
-    const totalRev = containerRev + netStorageAdjustment;
-
-    return {
-      total: allContainers.length,
-      unloaded: unloaded.length,
-      inTransit,
-      pending,
-      projected,
-      containerRev,
-      storageTopUp,
-      storageProRate,
-      netStorageAdjustment,
-      totalRev,
-      totalCost,
-      margin: totalRev - totalCost,
-    };
-  }, [allContainers, monthlyStorage]);
-
-  const periods = useMemo(() => Array.from(new Set(allContainers.map(c => c.period))), [allContainers]);
-
-  const filtered = useMemo(() => {
-    return allContainers.filter(c => {
-      if (search && !c.containerNumber.toLowerCase().includes(search.toLowerCase()) && !c.po.toLowerCase().includes(search.toLowerCase())) return false;
-      if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if (periodFilter !== "all" && c.period !== periodFilter) return false;
-      return true;
-    });
-  }, [allContainers, search, statusFilter, periodFilter]);
-
-  // Lumper summary
-  const lumperPaid = lumperInvoices.filter(i => i.status === "paid").reduce((s, i) => s + i.total, 0);
-  const lumperDue = lumperInvoices.filter(i => i.status === "due").reduce((s, i) => s + i.total, 0);
-  const lumperContainers = lumperInvoices.reduce((s, i) => s + i.containers.length, 0);
+  const lumperPaid = lumperInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
+  const lumperDue = lumperInvoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
+  const drayagePaid = drayageInvoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
+  const drayageDue = drayageInvoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
 
   return (
     <Layout>
@@ -109,328 +57,188 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Container Management</h1>
-            <p className="text-sm text-muted-foreground mt-1">Diamond Home — SC-144 Warehouse · {allContainers.length} containers tracked</p>
+            <h1 className="text-2xl font-bold tracking-tight">Container Dashboard</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Diamond Home — SC-144 · {active.length} containers · {unbilled.length} unbilled
+            </p>
           </div>
           <div className="flex gap-2">
             <Link href="/container/new">
-              <Button className="gap-2"><PlusCircle className="w-4 h-4" /> Add Container</Button>
+              <button className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90">+ Add Container</button>
             </Link>
-            <Link href="/batch-invoice">
-              <Button variant="outline" className="gap-2"><Layers className="w-4 h-4" /> Batch Invoice</Button>
+            <Link href="/extensiv-import">
+              <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent">Import Extensiv</button>
             </Link>
-            <Button variant="outline" className="gap-2" onClick={() => { exportContainersToExcel(allContainers); toast.success("Excel exported"); }}>
-              <Download className="w-4 h-4" /> Export All
-            </Button>
+            <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent" onClick={() => { exportContainersToExcel(active); toast.success("Exported"); }}>
+              <Download className="w-3.5 h-3.5 inline mr-1" />Export
+            </button>
           </div>
         </div>
 
-        {/* Stat Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="p-4">
-              <Package className="w-5 h-5 text-emerald-600 mb-1" />
-              <div className="text-2xl font-bold font-mono">{stats.total}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Containers</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-green-500">
-            <CardContent className="p-4">
-              <TrendingUp className="w-5 h-5 text-green-600 mb-1" />
-              <div className="text-2xl font-bold font-mono text-green-700">{fmtK(stats.totalRev)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Revenue</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent className="p-4">
-              <TrendingDown className="w-5 h-5 text-red-600 mb-1" />
-              <div className="text-2xl font-bold font-mono text-red-600">{fmtK(stats.totalCost)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Total Costs</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-4">
-              <BarChart3 className="w-5 h-5 text-blue-600 mb-1" />
-              <div className="text-2xl font-bold font-mono text-blue-700">{fmtK(stats.margin)}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Gross Margin</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-amber-500">
-            <CardContent className="p-4">
-              <Clock className="w-5 h-5 text-amber-600 mb-1" />
-              <div className="text-2xl font-bold font-mono">{stats.pending + stats.inTransit}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Awaiting Unload</div>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-purple-500">
-            <CardContent className="p-4">
-              <Truck className="w-5 h-5 text-purple-600 mb-1" />
-              <div className="text-2xl font-bold font-mono">{stats.projected}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Projected</div>
-            </CardContent>
-          </Card>
+          {[
+            { label: "Total", value: active.length, icon: Package, color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
+            { label: "Unloaded", value: unloaded.length, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-emerald-500" },
+            { label: "In Transit", value: inTransit.length, icon: Truck, color: "text-amber-600", bg: "bg-amber-50", border: "border-l-amber-500" },
+            { label: "Pending", value: pending.length, icon: Clock, color: "text-slate-500", bg: "bg-slate-50", border: "border-l-slate-400" },
+            { label: "Revenue", value: fmtK(adjustedRev), icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-green-500" },
+            { label: "Margin", value: fmtK(margin), icon: BarChart3, color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
+          ].map((s) => (
+            <div key={s.label} className={`bg-card border border-border border-l-4 ${s.border} rounded-lg p-3`}>
+              <div className={`w-7 h-7 rounded-md ${s.bg} flex items-center justify-center mb-1`}>
+                <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
+              </div>
+              <div className="text-lg font-bold font-mono">{s.value}</div>
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">{s.label}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Revenue & Cost Breakdown + Monthly Storage */}
+        {/* Revenue / Cost / Monthly Storage */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Revenue Breakdown */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-green-600" /> Revenue Breakdown (Unloaded)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+          <div className="bg-card border border-border rounded-lg p-4">
+            <h3 className="text-sm font-semibold flex items-center gap-2 mb-3"><TrendingUp className="w-4 h-4 text-green-600" /> Revenue (Unloaded)</h3>
+            <div className="space-y-1.5 text-sm">
               {[
-                ["IB Handling ($550 min)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.handlingRevenue,0)],
-                ["Storage ($0.18/cuft)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.storageRevenue,0)],
-                ["Drayage Pass-through ($495)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.drayageRevenue,0)],
-                ["Chassis Revenue ($40/day)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.chassisRevenue,0)],
-                ["Shrink Wrap ($2.50/pallet)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.shrinkWrapRevenue,0)],
-              ].map(([label, val]) => (
-                <div key={label as string} className="flex justify-between">
-                  <span className="text-muted-foreground">{label as string}</span>
-                  <span className="font-mono font-medium">{fmt(val as number)}</span>
-                </div>
+                ["IB Handling", unloaded.reduce((s, c) => s + c.handlingRevenue, 0)],
+                ["Storage", unloaded.reduce((s, c) => s + c.storageRevenue, 0)],
+                ["Drayage", unloaded.reduce((s, c) => s + c.drayageRevenue, 0)],
+                ["Chassis", unloaded.reduce((s, c) => s + c.chassisRevenue, 0)],
+                ["Shrink Wrap", unloaded.reduce((s, c) => s + c.shrinkWrapRevenue, 0)],
+              ].map(([l, v]) => (
+                <div key={l as string} className="flex justify-between"><span className="text-muted-foreground">{l as string}</span><span className="font-mono">{fmt(v as number)}</span></div>
               ))}
-              {stats.netStorageAdjustment !== 0 && (
-                <div className="flex justify-between text-amber-700">
-                  <span>Monthly Storage Adj.</span>
-                  <span className="font-mono font-medium">{fmt(stats.netStorageAdjustment)}</span>
-                </div>
+              {netStorageAdj !== 0 && (
+                <div className="flex justify-between text-amber-700"><span>Monthly Storage Adj</span><span className="font-mono">{fmt(netStorageAdj)}</span></div>
               )}
-              <div className="border-t pt-2 flex justify-between font-semibold">
-                <span>Total Revenue</span>
-                <span className="font-mono text-green-700">{fmt(stats.totalRev)}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Cost Breakdown */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <TrendingDown className="w-4 h-4 text-red-600" /> Cost Breakdown (Unloaded)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {[
-                ["M&A Drayage ($425/container)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.maDrayageCost,0)],
-                ["M&A Chassis ($30/day)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.maChassisCost,0)],
-                ["Lumper (Fernando/Freddie)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.lumperCost,0)],
-                ["Pallets ($4.50/pallet)", allContainers.filter(c=>c.status==="unloaded").reduce((s,c)=>s+c.palletCost,0)],
-              ].map(([label, val]) => (
-                <div key={label as string} className="flex justify-between">
-                  <span className="text-muted-foreground">{label as string}</span>
-                  <span className="font-mono font-medium">{fmt(val as number)}</span>
-                </div>
-              ))}
-              <div className="border-t pt-2 flex justify-between font-semibold">
-                <span>Total Costs</span>
-                <span className="font-mono text-red-600">{fmt(stats.totalCost)}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Monthly Storage Minimum */}
-          <Card className="border-l-4 border-l-amber-500">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Warehouse className="w-4 h-4 text-amber-600" /> Monthly Storage Minimum
-              </CardTitle>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Floor: {fmt(RATES.monthlyStorageMin)}/mo ({RATES.monthlyStorageMinCuft.toLocaleString()} cuft × ${RATES.monthlyStorageMinRate}/cuft)
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {monthlyStorage.map(m => (
-                <div key={m.month} className="space-y-1 pb-2 border-b last:border-b-0 last:pb-0">
-                  <div className="flex justify-between font-semibold">
-                    <span>{m.month}</span>
-                    <span className="text-xs text-muted-foreground">{m.containerCount} containers</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Actual ({m.actualStorageCuft.toLocaleString()} cuft × $0.18)</span>
-                    <span className="font-mono">{fmt(m.actualStorageRevenue)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Monthly Minimum</span>
-                    <span className="font-mono">{fmt(m.minimumThreshold)}</span>
-                  </div>
-                  {m.minimumApplies && (
-                    <div className="flex justify-between text-xs text-amber-700">
-                      <span className="flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Min applies — top-up</span>
-                      <span className="font-mono font-semibold">+{fmt(m.minimumTopUp)}</span>
-                    </div>
-                  )}
-                  {!m.minimumApplies && (
-                    <div className="flex justify-between text-xs text-emerald-700">
-                      <span>Actual exceeds minimum</span>
-                      <span className="font-mono">No top-up needed</span>
-                    </div>
-                  )}
-                  {m.proRateDiscount > 0 && (
-                    <div className="flex justify-between text-xs text-blue-700">
-                      <span>Pro-rate discount</span>
-                      <span className="font-mono">-{fmt(m.proRateDiscount)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs font-semibold pt-1">
-                    <span>Net Billed Storage</span>
-                    <span className="font-mono">{fmt(m.netStorage)}</span>
-                  </div>
-                </div>
-              ))}
-              {monthlyStorage.length === 0 && (
-                <div className="text-muted-foreground text-xs">No completed months yet</div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Lumper & Drayage & Client Quick Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2"><HardHat className="w-4 h-4" /> Lumper Invoices</CardTitle>
-                <Link href="/lumper-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
-              </div>
-            </CardHeader>
-            <CardContent className="text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-mono font-medium text-emerald-700">{fmt(lumperPaid)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Due</span><span className="font-mono font-medium text-red-600">{fmt(lumperDue)}</span></div>
-              <div className="flex justify-between border-t pt-1 font-semibold"><span>Total ({lumperContainers} ctnrs)</span><span className="font-mono">{fmt(lumperPaid + lumperDue)}</span></div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2"><Truck className="w-4 h-4" /> Drayage Invoices</CardTitle>
-                <Link href="/drayage-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
-              </div>
-            </CardHeader>
-            <CardContent className="text-sm space-y-1">
-              {drayageInvoices.map(inv => (
-                <div key={inv.invoiceNumber} className="flex justify-between">
-                  <span className="text-muted-foreground">{inv.invoiceNumber} ({inv.containers.length} ctnrs)</span>
-                  <span className={`font-mono font-medium ${inv.status === "paid" ? "text-emerald-700" : "text-red-600"}`}>{fmt(inv.total)} {inv.status.toUpperCase()}</span>
-                </div>
-              ))}
-              {drayageInvoices.length === 0 && <div className="text-muted-foreground text-xs">No drayage invoices yet</div>}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2"><DollarSign className="w-4 h-4" /> Client Invoices</CardTitle>
-                <Link href="/client-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View <ArrowUpRight className="w-3 h-3" /></span></Link>
-              </div>
-            </CardHeader>
-            <CardContent className="text-sm space-y-1">
-              {store.getClientInvoices().length === 0 ? (
-                <div className="text-muted-foreground text-xs">No client invoices yet. Use Batch Invoice to create.</div>
-              ) : (
-                store.getClientInvoices().map(inv => (
-                  <div key={inv.invoiceNumber} className="flex justify-between">
-                    <span className="text-muted-foreground">{inv.invoiceNumber} ({inv.lines.length} ctnrs)</span>
-                    <span className={`font-mono font-medium ${inv.status === "paid" ? "text-emerald-700" : "text-amber-600"}`}>{fmt(inv.total)} {inv.status.toUpperCase()}</span>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search container # or PO..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
+              <div className="border-t pt-1.5 flex justify-between font-semibold"><span>Total</span><span className="font-mono text-green-700">{fmt(adjustedRev)}</span></div>
+            </div>
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-            <option value="all">All Statuses</option>
-            <option value="unloaded">Unloaded</option>
-            <option value="received">Received</option>
-            <option value="in_transit">In Transit</option>
-            <option value="pending">Pending</option>
-            <option value="projected">Projected</option>
-          </select>
-          <select value={periodFilter} onChange={e => setPeriodFilter(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
-            <option value="all">All Periods</option>
-            {periods.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <span className="text-xs text-muted-foreground">{filtered.length} containers</span>
+
+          <div className="bg-card border border-border rounded-lg p-4">
+            <h3 className="text-sm font-semibold flex items-center gap-2 mb-3"><TrendingDown className="w-4 h-4 text-red-600" /> Costs (Unloaded)</h3>
+            <div className="space-y-1.5 text-sm">
+              {[
+                ["M&A Drayage", unloaded.reduce((s, c) => s + c.maDrayageCost, 0)],
+                ["M&A Chassis", unloaded.reduce((s, c) => s + c.maChassisCost, 0)],
+                ["Lumper", unloaded.reduce((s, c) => s + c.fernandoTotal, 0)],
+                ["Pallets", unloaded.reduce((s, c) => s + c.palletCost, 0)],
+              ].map(([l, v]) => (
+                <div key={l as string} className="flex justify-between"><span className="text-muted-foreground">{l as string}</span><span className="font-mono">{fmt(v as number)}</span></div>
+              ))}
+              <div className="border-t pt-1.5 flex justify-between font-semibold"><span>Total</span><span className="font-mono text-red-600">{fmt(totalCost)}</span></div>
+            </div>
+          </div>
+
+          <div className="bg-card border border-border border-l-4 border-l-amber-500 rounded-lg p-4">
+            <h3 className="text-sm font-semibold flex items-center gap-2 mb-1"><Warehouse className="w-4 h-4 text-amber-600" /> Monthly Storage Min</h3>
+            <p className="text-[10px] text-muted-foreground mb-3">65,000 cuft × $0.24 = $15,600/mo floor</p>
+            {monthlyStorage.map((m) => (
+              <div key={m.month} className="space-y-1 pb-2 mb-2 border-b border-border last:border-b-0 last:mb-0 last:pb-0">
+                <div className="flex justify-between text-sm font-semibold"><span>{m.month}</span><span className="text-xs text-muted-foreground">{m.containerCount} ctrs</span></div>
+                <div className="flex justify-between text-xs"><span className="text-muted-foreground">Actual ({m.actualStorageCuft.toLocaleString()} cuft)</span><span className="font-mono">{fmt(m.actualStorageRevenue)}</span></div>
+                {m.minimumApplies && (
+                  <div className="flex justify-between text-xs text-amber-700"><span><AlertTriangle className="w-3 h-3 inline mr-1" />Top-up</span><span className="font-mono font-semibold">+{fmt(m.minimumTopUp)}</span></div>
+                )}
+                {m.proRateDiscount > 0 && (
+                  <div className="flex justify-between text-xs text-blue-700"><span>Pro-rate</span><span className="font-mono">-{fmt(m.proRateDiscount)}</span></div>
+                )}
+                <div className="flex justify-between text-xs font-semibold pt-0.5"><span>Net</span><span className="font-mono">{fmt(m.netStorage)}</span></div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Payables Summary */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2"><HardHat className="w-4 h-4" /> Lumper Payables</h3>
+              <Link href="/lumper-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View All <ArrowUpRight className="w-3 h-3" /></span></Link>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-mono text-emerald-700">{fmt(lumperPaid)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Due</span><span className="font-mono text-red-600">{fmt(lumperDue)}</span></div>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2"><Truck className="w-4 h-4" /> Drayage Payables</h3>
+              <Link href="/drayage-invoices"><span className="text-xs text-primary hover:underline flex items-center gap-1">View All <ArrowUpRight className="w-3 h-3" /></span></Link>
+            </div>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-mono text-emerald-700">{fmt(drayagePaid)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Due</span><span className="font-mono text-red-600">{fmt(drayageDue)}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { href: "/inbound-tracking", label: "Inbound Tracking", sub: "DO / PL / Extensiv status" },
+            { href: "/lumper-invoices", label: "Lumper Payables", sub: "Fernando Palma invoices" },
+            { href: "/drayage-invoices", label: "Drayage Payables", sub: "M&A Transport invoices" },
+            { href: "/batch-invoice", label: "Batch Invoice", sub: "Bill Diamond Home" },
+          ].map((q) => (
+            <Link key={q.href} href={q.href}>
+              <div className="bg-card border border-border rounded-lg p-3 hover:border-primary/30 transition-colors cursor-pointer">
+                <div className="text-sm font-medium">{q.label}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{q.sub}</div>
+              </div>
+            </Link>
+          ))}
         </div>
 
         {/* Container Table */}
-        <div className="border rounded-lg overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/50 text-left">
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Container</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">PO</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Period</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Status</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">ETA / Arrival</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Cartons</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Revenue</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Cost</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-right">Margin</th>
-                <th className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider">Billing</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filtered.map(c => (
-                <tr key={c.id} className="hover:bg-muted/30 transition-colors">
-                  <td className="px-3 py-2">
-                    <Link href={`/container/${c.containerNumber}`}>
-                      <span className="font-mono text-xs font-semibold text-primary hover:underline cursor-pointer">{c.containerNumber}</span>
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.po || "—"}</td>
-                  <td className="px-3 py-2 text-xs">{c.period}</td>
-                  <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
-                  <td className="px-3 py-2 text-xs font-mono text-muted-foreground">
-                    {c.status === "pending" || c.status === "in_transit" || c.status === "projected"
-                      ? (c.eta || "TBD")
-                      : (c.arrivalDate || "—")}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{c.cartons > 0 ? c.cartons.toLocaleString() : "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-green-700">{c.totalRevenue > 0 ? fmt(c.totalRevenue) : "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-red-600">{c.totalCost > 0 ? fmt(c.totalCost) : "—"}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs font-semibold">{c.grossMargin > 0 ? fmt(c.grossMargin) : "—"}</td>
-                  <td className="px-3 py-2"><BillingBadge status={c.billingStatus} /></td>
+        <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="p-3 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold">All Containers</h3>
+            <span className="text-xs text-muted-foreground">{active.length} total</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-muted/50 text-muted-foreground">
+                  <th className="text-left px-3 py-2 font-medium">Container</th>
+                  <th className="text-left px-3 py-2 font-medium">Status</th>
+                  <th className="text-left px-3 py-2 font-medium">Period</th>
+                  <th className="text-left px-3 py-2 font-medium">ETA</th>
+                  <th className="text-right px-3 py-2 font-medium">Cartons</th>
+                  <th className="text-right px-3 py-2 font-medium">CuFt</th>
+                  <th className="text-right px-3 py-2 font-medium">Revenue</th>
+                  <th className="text-right px-3 py-2 font-medium">Cost</th>
+                  <th className="text-right px-3 py-2 font-medium">Margin</th>
+                  <th className="text-center px-3 py-2 font-medium">Billed</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {active.map((c) => (
+                  <tr key={c.id} className="border-t border-border hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <Link href={`/container/${c.container}`}>
+                        <span className="text-primary font-mono font-medium hover:underline cursor-pointer">{c.container}</span>
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
+                    <td className="px-3 py-2 text-muted-foreground">{c.period}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{c.eta || "TBD"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{c.cartons > 0 ? c.cartons.toLocaleString() : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono">{c.billableCuft > 0 ? c.billableCuft.toLocaleString() : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-emerald-600">{c.totalRevenue > 0 ? fmt(c.totalRevenue) : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-red-500">{c.totalCost > 0 ? fmt(c.totalCost) : "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono font-medium">{c.grossMargin !== 0 ? fmt(c.grossMargin) : "—"}</td>
+                    <td className="px-3 py-2 text-center">
+                      {c.billed ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mx-auto" /> :
+                       c.status === "unloaded" ? <AlertCircle className="w-3.5 h-3.5 text-amber-500 mx-auto" /> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-
-        {/* Rate Card Reference */}
-        <Card className="bg-muted/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rate Card Reference</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
-              <div className="flex justify-between"><span className="text-muted-foreground">Handling</span><span className="font-mono">$0.15/carton</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Handling Min</span><span className="font-mono">$550/container</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Drayage (bill)</span><span className="font-mono">$495/container</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Drayage (pay M&A)</span><span className="font-mono">$425/container</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Chassis (bill)</span><span className="font-mono">$40/day</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Chassis (pay M&A)</span><span className="font-mono">$30/day</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Storage</span><span className="font-mono">$0.18/cuft</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Monthly Storage Min</span><span className="font-mono font-semibold text-amber-700">{fmt(RATES.monthlyStorageMin)}/mo</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Shrink Wrap</span><span className="font-mono">$2.50/pallet</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Fernando)</span><span className="font-mono">$260-300/ctnr</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Lumper (Freddie)</span><span className="font-mono">$425-600/ctnr</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Pallets</span><span className="font-mono">$4.50/pallet</span></div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </Layout>
   );

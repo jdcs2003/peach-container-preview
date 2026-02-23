@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useStore } from "@/hooks/useStore";
-import { type Container, type LumperInvoice, type DrayageInvoice, type ClientInvoice, RATES } from "@/data/store";
+import { store, type Container, type LumperInvoice, type DrayageInvoice, type ClientInvoice, RATES } from "@/data/store";
 import { exportLumperInvoiceToExcel, exportDrayageInvoiceToExcel, exportClientInvoiceToExcel } from "@/lib/exportExcel";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -23,8 +23,7 @@ const fmt = (v: number) => v.toLocaleString("en-US", { style: "currency", curren
 type InvoiceType = "lumper" | "drayage" | "client";
 
 export default function BatchInvoice() {
-  const { store } = useStore();
-  const containers = store.getContainers();
+  const containers = useStore(() => store.getContainers());
 
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("lumper");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -36,10 +35,9 @@ export default function BatchInvoice() {
   // Filter containers based on invoice type
   const eligible = useMemo(() => {
     return containers.filter(c => {
-      if (c.status !== "unloaded" && c.status !== "received") return false;
-      if (invoiceType === "lumper") return c.lumperCost > 0 && c.lumperStatus !== "paid";
-      if (invoiceType === "drayage") return c.maDrayageTotal > 0 && c.maDrayageStatus !== "paid";
-      if (invoiceType === "client") return c.billingStatus !== "billed";
+      if (invoiceType === "lumper") return (c.status === "unloaded" || c.status === "received") && c.fernandoTotal > 0;
+      if (invoiceType === "drayage") return c.maDrayageCost > 0 || c.maChassisCost > 0;
+      if (invoiceType === "client") return (c.status === "unloaded" || c.status === "received") && !c.billed;
       return false;
     });
   }, [containers, invoiceType]);
@@ -56,15 +54,15 @@ export default function BatchInvoice() {
     if (selected.size === eligible.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(eligible.map(c => c.containerNumber)));
+      setSelected(new Set(eligible.map(c => c.container)));
     }
   };
 
-  const selectedContainers = eligible.filter(c => selected.has(c.containerNumber));
+  const selectedContainers = eligible.filter(c => selected.has(c.container));
 
   const totals = useMemo(() => {
-    if (invoiceType === "lumper") return selectedContainers.reduce((s, c) => s + c.lumperCost, 0);
-    if (invoiceType === "drayage") return selectedContainers.reduce((s, c) => s + c.maDrayageTotal, 0);
+    if (invoiceType === "lumper") return selectedContainers.reduce((s, c) => s + c.fernandoTotal, 0);
+    if (invoiceType === "drayage") return selectedContainers.reduce((s, c) => s + c.maDrayageCost + c.maChassisCost, 0);
     return selectedContainers.reduce((s, c) => s + c.totalRevenue, 0);
   }, [selectedContainers, invoiceType]);
 
@@ -78,14 +76,13 @@ export default function BatchInvoice() {
         invoiceDate,
         vendor: "Fernando Palma",
         status: "due",
-        containers: selectedContainers.map(c => ({
-          containerNumber: c.containerNumber,
-          skus: c.skuCount,
-          cases: c.cartons,
-          dateUnloaded: c.dateUnloaded,
-          payRate: c.lumperRate,
+        lines: selectedContainers.map(c => ({
+          container: c.container,
+          cartons: c.cartons,
+          skuCount: c.skuCount,
+          rate: c.fernandoRate,
+          unloadDate: c.fernandoUnloadDate,
         })),
-        subtotal: totals,
         total: totals,
       };
       store.createLumperInvoice(inv);
@@ -97,14 +94,14 @@ export default function BatchInvoice() {
         invoiceDate,
         vendor: "M&A Transport",
         status: "due",
-        containers: selectedContainers.map(c => ({
-          containerNumber: c.containerNumber,
-          pullDate: c.pullDate,
-          returnDate: c.returnDate,
-          chassisDays: c.chassisDays,
+        lines: selectedContainers.map(c => ({
+          container: c.container,
+          pickup: c.maPickup,
+          returnDate: c.maReturn,
+          chassisDays: c.maChassisDays,
           containerFee: c.maDrayageCost,
           chassisFee: c.maChassisCost,
-          total: c.maDrayageTotal,
+          total: c.maDrayageCost + c.maChassisCost,
         })),
         total: totals,
       };
@@ -119,12 +116,12 @@ export default function BatchInvoice() {
         period: period || "Custom",
         status: "draft",
         lines: selectedContainers.map(c => ({
-          containerNumber: c.containerNumber,
+          container: c.container,
           po: c.po,
           cartons: c.cartons,
           billableCuft: c.billableCuft,
           pallets: c.pallets,
-          chassisDays: c.chassisDays,
+          chassisDays: c.maChassisDays,
           handlingRevenue: c.handlingRevenue,
           storageRevenue: c.storageRevenue,
           drayageRevenue: c.drayageRevenue,
@@ -161,15 +158,9 @@ export default function BatchInvoice() {
       <div className="space-y-5 max-w-6xl">
         {/* Header */}
         <div>
-          <Link href="/">
-            <span className="text-sm text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1 mb-2">
-              <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
-            </span>
-          </Link>
+          <Link href="/"><span className="text-sm text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1 mb-2"><ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard</span></Link>
           <div className="flex items-center gap-3 mt-1">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-primary" />
-            </div>
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center"><FileText className="w-5 h-5 text-primary" /></div>
             <div>
               <h1 className="text-xl font-bold">Batch Invoice Builder</h1>
               <p className="text-sm text-muted-foreground">Select containers → Generate invoice → Export to Excel</p>
@@ -182,14 +173,8 @@ export default function BatchInvoice() {
           {(["lumper", "drayage", "client"] as InvoiceType[]).map(t => {
             const Icon = typeConfig[t].icon;
             return (
-              <Button
-                key={t}
-                variant={invoiceType === t ? "default" : "outline"}
-                onClick={() => { setInvoiceType(t); setSelected(new Set()); setGeneratedInvoice(null); }}
-                className="gap-2"
-              >
-                <Icon className="w-4 h-4" />
-                {typeConfig[t].label}
+              <Button key={t} variant={invoiceType === t ? "default" : "outline"} onClick={() => { setInvoiceType(t); setSelected(new Set()); setGeneratedInvoice(null); }} className="gap-2">
+                <Icon className="w-4 h-4" /> {typeConfig[t].label}
               </Button>
             );
           })}
@@ -202,8 +187,7 @@ export default function BatchInvoice() {
               <CardHeader className="pb-2 pt-3 px-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
-                    Select Containers for {cfg.label}
+                    <cfg.icon className={`w-4 h-4 ${cfg.color}`} /> Select Containers for {cfg.label}
                   </CardTitle>
                   <Button variant="ghost" size="sm" onClick={selectAll} className="text-xs h-7">
                     {selected.size === eligible.length && eligible.length > 0 ? "Deselect All" : "Select All"} ({eligible.length})
@@ -212,9 +196,7 @@ export default function BatchInvoice() {
               </CardHeader>
               <CardContent className="px-0 pb-0">
                 {eligible.length === 0 ? (
-                  <div className="text-center py-10 text-muted-foreground text-sm">
-                    No eligible containers found. Containers must be unloaded/received and not already invoiced for this type.
-                  </div>
+                  <div className="text-center py-10 text-muted-foreground text-sm">No eligible containers found for this invoice type.</div>
                 ) : (
                   <div className="overflow-auto max-h-[500px]">
                     <table className="w-full text-sm">
@@ -222,13 +204,18 @@ export default function BatchInvoice() {
                         <tr>
                           <th className="px-3 py-2 text-left w-8"></th>
                           <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Container</th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">PO</th>
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Date</th>
-                          {invoiceType === "lumper" && <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">Lumper Cost</th>}
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Period</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider">Status</th>
+                          {invoiceType === "lumper" && (
+                            <>
+                              <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">Cartons</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">Rate</th>
+                            </>
+                          )}
                           {invoiceType === "drayage" && (
                             <>
                               <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">Chassis Days</th>
-                              <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">M&A Total</th>
+                              <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider">Total</th>
                             </>
                           )}
                           {invoiceType === "client" && (
@@ -241,20 +228,23 @@ export default function BatchInvoice() {
                       </thead>
                       <tbody className="divide-y">
                         {eligible.map(c => {
-                          const isSelected = selected.has(c.containerNumber);
+                          const isSelected = selected.has(c.container);
                           return (
-                            <tr key={c.containerNumber} onClick={() => toggleSelect(c.containerNumber)} className={`cursor-pointer transition-colors ${isSelected ? "bg-primary/5" : "hover:bg-muted/30"}`}>
-                              <td className="px-3 py-2">
-                                {isSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4 text-muted-foreground/40" />}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-xs font-semibold">{c.containerNumber}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{c.po || "—"}</td>
-                              <td className="px-3 py-2 text-xs">{c.dateUnloaded || c.arrivalDate || "—"}</td>
-                              {invoiceType === "lumper" && <td className="px-3 py-2 text-right font-mono text-xs">{fmt(c.lumperCost)}</td>}
+                            <tr key={c.container} onClick={() => toggleSelect(c.container)} className={`cursor-pointer transition-colors ${isSelected ? "bg-primary/5" : "hover:bg-muted/30"}`}>
+                              <td className="px-3 py-2">{isSelected ? <CheckSquare className="w-4 h-4 text-primary" /> : <Square className="w-4 h-4 text-muted-foreground/40" />}</td>
+                              <td className="px-3 py-2 font-mono text-xs font-semibold">{c.container}</td>
+                              <td className="px-3 py-2 text-xs">{c.period}</td>
+                              <td className="px-3 py-2 text-xs uppercase">{c.status}</td>
+                              {invoiceType === "lumper" && (
+                                <>
+                                  <td className="px-3 py-2 text-right font-mono text-xs">{c.cartons.toLocaleString()}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-xs">{fmt(c.fernandoTotal)}</td>
+                                </>
+                              )}
                               {invoiceType === "drayage" && (
                                 <>
-                                  <td className="px-3 py-2 text-right font-mono text-xs">{c.chassisDays}</td>
-                                  <td className="px-3 py-2 text-right font-mono text-xs">{fmt(c.maDrayageTotal)}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-xs">{c.maChassisDays}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-xs">{fmt(c.maDrayageCost + c.maChassisCost)}</td>
                                 </>
                               )}
                               {invoiceType === "client" && (
@@ -277,9 +267,7 @@ export default function BatchInvoice() {
           {/* Right: Invoice details + generate */}
           <div className="space-y-4">
             <Card>
-              <CardHeader className="pb-2 pt-3 px-4">
-                <CardTitle className="text-sm font-semibold">Invoice Details</CardTitle>
-              </CardHeader>
+              <CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm font-semibold">Invoice Details</CardTitle></CardHeader>
               <CardContent className="px-4 pb-4 space-y-3">
                 <div>
                   <Label className="text-xs">Invoice Number *</Label>
@@ -295,9 +283,7 @@ export default function BatchInvoice() {
                     <Input value={period} onChange={e => setPeriod(e.target.value)} placeholder="Feb Wk3" className="h-9" />
                   </div>
                 )}
-                <div className="text-xs text-muted-foreground">
-                  Vendor: <span className="font-medium">{cfg.vendor}</span>
-                </div>
+                <div className="text-xs text-muted-foreground">Vendor: <span className="font-medium">{cfg.vendor}</span></div>
               </CardContent>
             </Card>
 
@@ -305,10 +291,7 @@ export default function BatchInvoice() {
             <Card className={selected.size > 0 ? "border-primary/30" : ""}>
               <CardContent className="p-4 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Selection Summary</div>
-                <div className="flex justify-between text-sm">
-                  <span>Containers</span>
-                  <span className="font-mono font-semibold">{selected.size}</span>
-                </div>
+                <div className="flex justify-between text-sm"><span>Containers</span><span className="font-mono font-semibold">{selected.size}</span></div>
                 <div className="flex justify-between text-sm border-t pt-2 font-bold">
                   <span>Total</span>
                   <span className={`font-mono ${invoiceType === "client" ? "text-emerald-700" : "text-red-600"}`}>{fmt(totals)}</span>
@@ -317,22 +300,15 @@ export default function BatchInvoice() {
             </Card>
 
             <Button onClick={generateInvoice} className="w-full gap-2" disabled={selected.size === 0}>
-              <Check className="w-4 h-4" />
-              Generate {cfg.label}
+              <Check className="w-4 h-4" /> Generate {cfg.label}
             </Button>
 
             {generatedInvoice && (
               <Card className="border-emerald-200 bg-emerald-50">
                 <CardContent className="p-4 space-y-2">
-                  <div className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
-                    <Check className="w-4 h-4" /> Invoice Generated
-                  </div>
-                  <div className="text-xs text-emerald-700">
-                    {generatedInvoice.invoiceNumber} — {fmt((generatedInvoice as any).total)}
-                  </div>
-                  <Button variant="outline" size="sm" onClick={exportGenerated} className="w-full gap-2 mt-2">
-                    <Download className="w-4 h-4" /> Export to Excel
-                  </Button>
+                  <div className="text-sm font-semibold text-emerald-800 flex items-center gap-2"><Check className="w-4 h-4" /> Invoice Generated</div>
+                  <div className="text-xs text-emerald-700">{generatedInvoice.invoiceNumber} — {fmt(generatedInvoice.total)}</div>
+                  <Button variant="outline" size="sm" onClick={exportGenerated} className="w-full gap-2 mt-2"><Download className="w-4 h-4" /> Export to Excel</Button>
                 </CardContent>
               </Card>
             )}
