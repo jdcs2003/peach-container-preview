@@ -47,32 +47,41 @@ export default function ExtensivImport() {
         // Parse Extensiv format
         const rows: ParsedRow[] = [];
         for (const row of json) {
-          // Find container number - could be "Reference Number" or similar
-          const refNum = row["Reference Number"] || row["ReferenceNumber"] || row["Container"] || "";
-          if (!refNum || typeof refNum !== "string") continue;
+          // Reference Number format: "MRSU6846097-CANCELED-1117" or "MRSU6846097"
+          const refNum = String(row["Reference Number"] || row["ReferenceNumber"] || row["Container"] || "");
+          if (!refNum) continue;
 
-          // Extract container numbers (could be comma-separated)
-          const containers = refNum.split(",").map((s: string) => s.trim()).filter(Boolean);
+          // Extract container number (first 11 chars: 4 letters + 7 digits) from Reference Number
+          const ctnrMatch = refNum.match(/([A-Z]{4}\d{7})/g);
+          if (!ctnrMatch || ctnrMatch.length === 0) continue;
           
-          // Status mapping
-          const statusRaw = String(row["Status"] || row["Receipt Status"] || "");
+          // Status mapping: 1=Received, 2=Canceled, 3=In Transit
+          const statusRaw = String(row["Status"] || "");
           let status = "PENDING";
           if (statusRaw === "1" || statusRaw.toUpperCase().includes("RECEIV")) status = "RECEIVED";
           else if (statusRaw === "2" || statusRaw.toUpperCase().includes("CANCEL")) status = "CANCELED";
           else if (statusRaw === "3" || statusRaw.toUpperCase().includes("TRANSIT")) status = "IN TRANSIT";
 
-          const arrival = row["Arrival Date"] || row["ArrivalDate"] || row["Creation Date"] || "";
-          const po = row["PO"] || row["PO Number"] || row["ExternalId"] || "";
+          // Skip canceled containers
+          if (status === "CANCELED") continue;
+
+          const arrival = row["Arrival Date"] || "";
+          const po = row["Purchase Order Number"] || row["PO"] || row["PO Number"] || "";
           const notes = row["Notes"] || row["Discrepancies"] || "";
           
-          // Try to get carton count from item details
-          const cartons = parseInt(row["Qty"] || row["Quantity"] || row["Cases"] || "0") || 0;
-          const skuCount = parseInt(row["SKU Count"] || row["SKUs"] || "0") || 0;
+          // Parse SKU column: "100322(0),100323(0),600039(0)" → count unique SKUs
+          const skuRaw = String(row["SKU"] || "");
+          const skuItems = skuRaw.split(",").filter(Boolean);
+          const skuCount = skuItems.length;
+          // Sum cartons from SKU quantities: "100322(240),100323(180)" → 420
+          let cartons = 0;
+          for (const item of skuItems) {
+            const qtyMatch = item.match(/\((\d+)\)/);
+            if (qtyMatch) cartons += parseInt(qtyMatch[1]) || 0;
+          }
 
-          for (const ctnr of containers) {
-            if (ctnr.length >= 8) {
-              rows.push({ container: ctnr, status, arrival: String(arrival), po: String(po), cartons, skuCount, notes: String(notes) });
-            }
+          for (const ctnr of ctnrMatch) {
+            rows.push({ container: ctnr, status, arrival: String(arrival || ""), po: String(po || ""), cartons, skuCount, notes: String(notes || "") });
           }
         }
 

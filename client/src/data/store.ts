@@ -134,11 +134,11 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v3",
-  lumperInvoices: "pw_lumper_v3",
-  drayageInvoices: "pw_drayage_v3",
-  clientInvoices: "pw_client_v3",
-  initialized: "pw_init_v3",
+  containers: "pw_containers_v4",
+  lumperInvoices: "pw_lumper_v4",
+  drayageInvoices: "pw_drayage_v4",
+  clientInvoices: "pw_client_v4",
+  initialized: "pw_init_v4",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -181,42 +181,64 @@ function buildSeedLumperInvoices(containers: Container[]): LumperInvoice[] {
 }
 
 function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
-  // Group by M&A pickup batches
-  const withMA = containers.filter((c) => c.maPickup);
-  if (withMA.length === 0) return [];
-  
-  // Group by pickup week
-  const byWeek: Record<string, Container[]> = {};
-  for (const c of withMA) {
-    const d = new Date(c.maPickup);
-    const wk = `${d.getFullYear()}-W${Math.ceil(d.getDate() / 7)}`;
-    if (!byWeek[wk]) byWeek[wk] = [];
-    byWeek[wk].push(c);
-  }
-  
+  const byId = new Map(containers.map((c) => [c.container, c]));
+  const makeLine = (id: string): DrayageInvoiceLine | null => {
+    const c = byId.get(id);
+    if (!c) return null;
+    return {
+      container: c.container, pickup: c.maPickup, returnDate: c.maReturn,
+      chassisDays: c.maChassisDays, containerFee: c.maDrayageCost,
+      chassisFee: c.maChassisCost, total: c.maDrayageCost + c.maChassisCost,
+    };
+  };
+
+  // Batch 1: MA-20260201 — 10 containers, $5,900 PAID
+  const batch1Ids = [
+    "DRYU9540403", "EGSU1270331", "EITU1282857", "EITU9684456", "EITU9584427",
+    "EMCU8522387", "GAOU7182633", "HASU4158822", "HMMU4500998", "HPCU4902098",
+  ];
+  // Batch 2: MA-20260204 — 8 containers, $3,970 PAID
+  const batch2Ids = [
+    "MRKU3249053", "MRKU4390820", "MRKU5807745", "MRSU6518272",
+    "MSKU6580816", "ONEU1075443", "TCKU8541738", "MSNU8718946",
+  ];
+  // Batch 3: Paid 021726 — 15 containers, $8,325 PAID
+  const batch3Ids = [
+    "CAAU8340789", "MSNU6630666", "NYKU5104769", "JXLU4402179",
+    "EITU9171292", "MRKU4377655", "MRSU8376705", "TRHU4848410",
+    "MRSU7312429", "TRHU4341597", "FFAU6666281", "ZCSU6594851",
+    "MSNU8718946", "HMMU4264969", "HMMU6542760",
+  ];
+  // Batch 4: Currently out as of 02/17 — 6 containers, PENDING
+  const batch4Ids = [
+    "HMMU6867832", "TXGU8533128", "KOCU4917503",
+    "MSBU5090355", "MSDU6013601", "MSDU8047581",
+  ];
+  // Parma Transport — 2 containers, $1,200 PAID
+  const parmaIds = ["BMOU4244012", "WHSU9015409"];
+
   const invoices: DrayageInvoice[] = [];
-  let invNum = 1;
-  for (const wk of Object.keys(byWeek).sort()) {
-    const cs = byWeek[wk];
-    const lines: DrayageInvoiceLine[] = cs.map((c) => ({
-      container: c.container,
-      pickup: c.maPickup,
-      returnDate: c.maReturn,
-      chassisDays: c.maChassisDays,
-      containerFee: c.maDrayageCost,
-      chassisFee: c.maChassisCost,
-      total: c.maDrayageCost + c.maChassisCost,
-    }));
-    invoices.push({
-      invoiceNumber: `MA-2026-${String(invNum).padStart(3, "0")}`,
-      invoiceDate: cs[0]?.maPickup || "",
-      vendor: "M&A Transport",
-      status: "paid",
-      lines,
+
+  const buildInv = (ids: string[], num: string, date: string, vendor: string, status: "paid" | "due"): DrayageInvoice | null => {
+    const lines = ids.map(makeLine).filter(Boolean) as DrayageInvoiceLine[];
+    if (lines.length === 0) return null;
+    return {
+      invoiceNumber: num, invoiceDate: date, vendor, status, lines,
       total: lines.reduce((s, l) => s + l.total, 0),
-    });
-    invNum++;
-  }
+    };
+  };
+
+  const inv1 = buildInv(batch1Ids, "MA-20260201", "2026-01-22", "M&A Transport", "paid");
+  if (inv1) invoices.push(inv1);
+  const inv2 = buildInv(batch2Ids, "MA-20260204", "2026-02-03", "M&A Transport", "paid");
+  if (inv2) invoices.push(inv2);
+  const inv3 = buildInv(batch3Ids, "MA-20260217", "2026-02-12", "M&A Transport", "paid");
+  if (inv3) invoices.push(inv3);
+  const inv4 = buildInv(batch4Ids, "MA-20260217-OUT", "2026-02-16", "M&A Transport", "due");
+  if (inv4) invoices.push(inv4);
+  const invParma = buildInv(parmaIds, "PARMA-20260201", "2026-01-22", "Parma Transport", "paid");
+  if (invParma) invoices.push(invParma);
+
   return invoices;
 }
 
