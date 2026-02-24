@@ -134,7 +134,7 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v7",
+  containers: "pw_containers_v9",
   lumperInvoices: "pw_lumper_v7",
   drayageInvoices: "pw_drayage_v7",
   clientInvoices: "pw_client_v7",
@@ -145,38 +145,63 @@ const KEYS = {
 // SEED INVOICES from actual data
 // ═══════════════════════════════════════════════════════════
 function buildSeedLumperInvoices(containers: Container[]): LumperInvoice[] {
-  // Group unloaded containers by week for Fernando invoices
-  const byWeek: Record<string, Container[]> = {};
-  for (const c of containers) {
-    if (c.fernandoUnloadDate && c.status !== "canceled") {
-      const wk = c.period || "Unknown";
-      if (!byWeek[wk]) byWeek[wk] = [];
-      byWeek[wk].push(c);
-    }
-  }
+  // REAL Freddy invoices from actual submitted files — do NOT auto-batch
+  const byId = new Map(containers.map((c) => [c.container, c]));
+  const makeLine = (id: string): LumperInvoiceLine | null => {
+    const c = byId.get(id);
+    if (!c) return null;
+    return { container: c.container, cartons: c.cartons, skuCount: c.skuCount, rate: c.fernandoRate, unloadDate: c.fernandoUnloadDate };
+  };
+
+  // Batch 1: WE01242026 — 9 containers, $2,600 PAID
+  const batch1Ids = [
+    "MRKU5545938", "MRKU3725416", "MRKU2402234", "TCNU8150661", "MSKU1928437",
+    "MRSU4926151", "SUDU8795010", "BMOU4244012", "MRKU5416587",
+  ];
+  // Batch 2: FP-20260205 — 15 containers, $4,200 PAID
+  const batch2Ids = [
+    "CAAU8340789", "WHSU9015409", "ONEU1919230", "MSNU6630666", "ONEU5253590",
+    "SEKU4713410", "CAAU7482454", "TRHU5016591", "NYKU5104769", "JXLU4402179",
+    "EGHU9666372", "TXGU6089924", "TCNU7918159", "YMLU9580270", "HASU4886399",
+  ];
+  // Batch 3: FP-20260211 — 13 containers, $3,580 DUE
+  const batch3Ids = [
+    "JXLU6414630", "ZCSU7553498", "CAIU6454234", "CAAU9375558", "EGSU6378289",
+    "MRSU3625003", "TCNU7052887", "EITU9171292", "MRSU8376705", "TRHU4848410",
+    "MRKU4377655", "MRSU7312429", "TRHU4341597",
+  ];
+  // Batch 4: FP-WE021426 — 3 containers + waiting time, $980 DUE
+  const batch4Ids = ["MSNU8718946", "ZCSU6594851", "FFAU6666281"];
+  // Batch 5: FP-Invoice-0221 — 21 containers, $6,420 DUE
+  const batch5Ids = [
+    "HMMU6542760", "TXGU8533128", "HMMU4264969", "MSDU8047581", "KOCU4917503",
+    "HMMU6867832", "MSDU6013601", "MRKU3807047", "MSBU5090355", "MRKU4118931",
+    "TCNU2795200", "MRKU2163567", "MRKU6301242", "CAAU8050223", "TCNU2776513",
+    "MRKU4183222", "GCXU5568130", "TGBU5688890", "MRSU7315304", "FFAU4623130",
+    "CAAU7927088",
+  ];
+
   const invoices: LumperInvoice[] = [];
-  const sortedWeeks = Object.keys(byWeek).sort();
-  let invNum = 1;
-  for (const wk of sortedWeeks) {
-    const cs = byWeek[wk];
-    const lines: LumperInvoiceLine[] = cs.map((c) => ({
-      container: c.container,
-      cartons: c.cartons,
-      skuCount: c.skuCount,
-      rate: c.fernandoRate,
-      unloadDate: c.fernandoUnloadDate,
-    }));
-    const total = lines.reduce((s, l) => s + l.rate, 0);
-    invoices.push({
-      invoiceNumber: `FP-2026-${String(invNum).padStart(3, "0")}`,
-      invoiceDate: cs[0]?.fernandoUnloadDate || "",
-      vendor: "Fernando Palma",
-      status: wk.startsWith("Jan") || wk === "Feb Wk1" || wk === "Feb Wk2" ? "paid" : "due",
-      lines,
-      total,
-    });
-    invNum++;
-  }
+  const buildInv = (ids: string[], num: string, date: string, status: "paid" | "due", extraTotal = 0): LumperInvoice | null => {
+    const lines = ids.map(makeLine).filter(Boolean) as LumperInvoiceLine[];
+    if (lines.length === 0) return null;
+    return {
+      invoiceNumber: num, invoiceDate: date, vendor: "Fernando Palma", status, lines,
+      total: lines.reduce((s, l) => s + l.rate, 0) + extraTotal,
+    };
+  };
+
+  const inv1 = buildInv(batch1Ids, "FP-WE01242026", "2026-01-24", "paid");
+  if (inv1) invoices.push(inv1);
+  const inv2 = buildInv(batch2Ids, "FP-20260205", "2026-02-05", "paid");
+  if (inv2) invoices.push(inv2);
+  const inv3 = buildInv(batch3Ids, "FP-20260211", "2026-02-11", "due");
+  if (inv3) invoices.push(inv3);
+  const inv4 = buildInv(batch4Ids, "FP-WE021426", "2026-02-14", "due", 200); // +$200 waiting time
+  if (inv4) invoices.push(inv4);
+  const inv5 = buildInv(batch5Ids, "FP-20260221", "2026-02-21", "due");
+  if (inv5) invoices.push(inv5);
+
   return invoices;
 }
 
