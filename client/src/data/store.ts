@@ -134,11 +134,11 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v6",
-  lumperInvoices: "pw_lumper_v6",
-  drayageInvoices: "pw_drayage_v6",
-  clientInvoices: "pw_client_v6",
-  initialized: "pw_init_v7",
+  containers: "pw_containers_v7",
+  lumperInvoices: "pw_lumper_v7",
+  drayageInvoices: "pw_drayage_v7",
+  clientInvoices: "pw_client_v7",
+  initialized: "pw_init_v8",
 };
 
 // ═══════════════════════════════════════════════════════════
