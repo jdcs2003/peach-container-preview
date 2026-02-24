@@ -4,7 +4,7 @@ import { useStore } from "@/hooks/useStore";
 import { exportDrayageInvoiceToExcel } from "@/lib/exportExcel";
 import { Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Download, CheckCircle2, Plus, Truck, FileText, AlertCircle, ChevronDown, ChevronUp, Check } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle2, Plus, Truck, FileText, AlertCircle, ChevronDown, ChevronUp, Check, Clock, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -17,7 +17,17 @@ export default function DrayageInvoices() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
-  const pushable = containers.filter((c) => c.maPickup && !invoicedContainers.has(c.container) && c.status !== "canceled");
+
+  // WORKFLOW: Only containers with BOTH pickup AND return dates are ready to batch
+  // (empty returned to port = drayage complete = ready to invoice)
+  const readyToBatch = containers.filter(
+    (c) => c.maPickup && c.maReturn && !invoicedContainers.has(c.container) && c.status !== "canceled"
+  );
+
+  // Containers currently out (picked up but NOT returned yet)
+  const currentlyOut = containers.filter(
+    (c) => c.maPickup && !c.maReturn && !invoicedContainers.has(c.container) && c.status !== "canceled"
+  );
 
   const totalPaid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);
   const totalDue = invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
@@ -56,7 +66,7 @@ export default function DrayageInvoices() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
             <div className="text-xl font-bold font-mono text-emerald-700">{fmt(totalPaid)}</div>
@@ -72,24 +82,66 @@ export default function DrayageInvoices() {
             <div className="text-xl font-bold font-mono">{totalContainers}</div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Hauled</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-4">
-            <FileText className="w-5 h-5 text-muted-foreground mb-1" />
-            <div className="text-xl font-bold font-mono">{invoices.length}</div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Invoices</div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <RotateCcw className="w-5 h-5 text-amber-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-amber-700">{readyToBatch.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ready to Batch</div>
+          </div>
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+            <Clock className="w-5 h-5 text-orange-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-orange-700">{currentlyOut.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Currently Out</div>
           </div>
         </div>
 
+        {/* Currently Out - chassis still running */}
+        {currentlyOut.length > 0 && (
+          <div className="bg-orange-50/50 border border-orange-200 rounded-lg p-4">
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2 text-orange-800">
+              <Clock className="w-4 h-4" /> Chassis Currently Out ({currentlyOut.length})
+              <span className="text-xs font-normal text-orange-600 ml-1">— Picked up, not yet returned to port</span>
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-orange-100/50 text-muted-foreground">
+                  <th className="text-left px-3 py-2 font-medium">Container</th>
+                  <th className="text-left px-3 py-2 font-medium">Pickup</th>
+                  <th className="text-right px-3 py-2 font-medium">Days Out</th>
+                  <th className="text-right px-3 py-2 font-medium">Est. Chassis</th>
+                </tr></thead>
+                <tbody>
+                  {currentlyOut.map((c) => {
+                    const daysOut = c.maPickup ? Math.ceil((Date.now() - new Date(c.maPickup).getTime()) / 86400000) : 0;
+                    return (
+                      <tr key={c.container} className="border-t border-orange-200/50 hover:bg-orange-100/30">
+                        <td className="px-3 py-2"><Link href={`/container/${c.container}`}><span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.container}</span></Link></td>
+                        <td className="px-3 py-2">{c.maPickup}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-orange-700">{daysOut}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(daysOut * 30)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Push to Drayage - only returned containers */}
         {showPush && (
           <div className="bg-card border-2 border-primary/20 rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2"><Truck className="w-4 h-4" /> Select Containers to Create Drayage Invoice</h3>
-            {pushable.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No containers with M&A pickup data that aren't already on a drayage invoice.</p>
+            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+              <Truck className="w-4 h-4" /> Ready to Batch — Returned to Port ({readyToBatch.length})
+              <span className="text-xs font-normal text-muted-foreground ml-1">— Empty returned, drayage complete</span>
+            </h3>
+            {readyToBatch.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No containers ready to batch. Containers must have both pickup and return dates (empty returned to port).</p>
             ) : (
               <>
                 <div className="overflow-x-auto mb-3">
                   <table className="w-full text-xs">
                     <thead><tr className="bg-muted/50 text-muted-foreground">
-                      <th className="text-center px-3 py-2 w-8"><input type="checkbox" checked={selected.size === pushable.length && pushable.length > 0} onChange={() => { selected.size === pushable.length ? setSelected(new Set()) : setSelected(new Set(pushable.map((c) => c.container))); }} /></th>
+                      <th className="text-center px-3 py-2 w-8"><input type="checkbox" checked={selected.size === readyToBatch.length && readyToBatch.length > 0} onChange={() => { selected.size === readyToBatch.length ? setSelected(new Set()) : setSelected(new Set(readyToBatch.map((c) => c.container))); }} /></th>
                       <th className="text-left px-3 py-2 font-medium">Container</th>
                       <th className="text-left px-3 py-2 font-medium">Pickup</th>
                       <th className="text-left px-3 py-2 font-medium">Return</th>
@@ -99,7 +151,7 @@ export default function DrayageInvoices() {
                       <th className="text-right px-3 py-2 font-medium">Total</th>
                     </tr></thead>
                     <tbody>
-                      {pushable.map((c) => (
+                      {readyToBatch.map((c) => (
                         <tr key={c.container} className="border-t border-border hover:bg-muted/30">
                           <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
                           <td className="px-3 py-2 font-mono font-semibold">{c.container}</td>
