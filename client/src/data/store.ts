@@ -134,7 +134,7 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v9",
+  containers: "pw_containers_v10",
   lumperInvoices: "pw_lumper_v7",
   drayageInvoices: "pw_drayage_v7",
   clientInvoices: "pw_client_v7",
@@ -195,9 +195,9 @@ function buildSeedLumperInvoices(containers: Container[]): LumperInvoice[] {
   if (inv1) invoices.push(inv1);
   const inv2 = buildInv(batch2Ids, "FP-20260205", "2026-02-05", "paid");
   if (inv2) invoices.push(inv2);
-  const inv3 = buildInv(batch3Ids, "FP-20260211", "2026-02-11", "due");
+  const inv3 = buildInv(batch3Ids, "FP-20260211", "2026-02-11", "paid", 539.02); // +$539.02 outbound shipping
   if (inv3) invoices.push(inv3);
-  const inv4 = buildInv(batch4Ids, "FP-WE021426", "2026-02-14", "due", 200); // +$200 waiting time
+  const inv4 = buildInv(batch4Ids, "FP-WE021426", "2026-02-14", "due", 757.19); // +$200 waiting + $557.19 outbound
   if (inv4) invoices.push(inv4);
   const inv5 = buildInv(batch5Ids, "FP-20260221", "2026-02-21", "due");
   if (inv5) invoices.push(inv5);
