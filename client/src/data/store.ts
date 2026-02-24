@@ -134,11 +134,11 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v4",
-  lumperInvoices: "pw_lumper_v4",
-  drayageInvoices: "pw_drayage_v4",
-  clientInvoices: "pw_client_v4",
-  initialized: "pw_init_v5",
+  containers: "pw_containers_v6",
+  lumperInvoices: "pw_lumper_v6",
+  drayageInvoices: "pw_drayage_v6",
+  clientInvoices: "pw_client_v6",
+  initialized: "pw_init_v7",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -192,10 +192,11 @@ function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
     };
   };
 
-  // Batch 1: MA-20260201 — 10 containers, $5,900 PAID
+  // Batch 1: MA-20260201 — 14 containers, $8,200 PAID
   const batch1Ids = [
     "MRKU5545938", "MRKU3725416", "MRKU2402234", "TCNU8150661", "MSKU1928437",
     "MRSU4926151", "SUDU8795010", "MRKU5416587", "BMOU4244012", "WHSU9015409",
+    "CAAU7482454", "ONEU1919230", "ONEU5253590", "TRHU5016591",
   ];
   // Batch 2: MA-20260204 — 8 containers, $3,970 PAID
   const batch2Ids = [
@@ -572,6 +573,21 @@ class Store {
           actionNeeded: actions.length > 0 ? actions.join(", ") : "Complete",
         };
       });
+  }
+
+  // ── Find invoices for a container ──
+  getInvoicesForContainer(containerId: string): { lumper: { invoiceNumber: string; status: string } | null; drayage: { invoiceNumber: string; status: string } | null; client: { invoiceNumber: string; status: string } | null } {
+    const lumperInvs = this.getLumperInvoices();
+    const drayageInvs = this.getDrayageInvoices();
+    const clientInvs = this.getClientInvoices();
+    const lumper = lumperInvs.find((i) => i.lines.some((l) => l.container === containerId));
+    const drayage = drayageInvs.find((i) => i.lines.some((l) => l.container === containerId));
+    const client = clientInvs.find((i) => i.lines.some((l) => l.container === containerId));
+    return {
+      lumper: lumper ? { invoiceNumber: lumper.invoiceNumber, status: lumper.status } : null,
+      drayage: drayage ? { invoiceNumber: drayage.invoiceNumber, status: drayage.status } : null,
+      client: client ? { invoiceNumber: client.invoiceNumber, status: client.status } : null,
+    };
   }
 
   // ── Reset ──

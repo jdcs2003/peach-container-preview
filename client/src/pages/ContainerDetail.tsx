@@ -16,7 +16,60 @@ const statusColors: Record<string, string> = {
   billed: "bg-purple-100 text-purple-700",
   canceled: "bg-red-100 text-red-700",
   projected: "bg-gray-100 text-gray-500",
+  "on-hold": "bg-orange-100 text-orange-700",
 };
+
+function InvoiceBadge({ inv }: { inv: { invoiceNumber: string; status: string } | null }) {
+  if (!inv) return <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">UNBATCHED</span>;
+  const isPaid = inv.status === "paid";
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${isPaid ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+      {inv.invoiceNumber} {isPaid ? "PAID" : "DUE"}
+    </span>
+  );
+}
+
+function CostDetail({ container: c }: { container: ReturnType<typeof store.getContainer> & {} }) {
+  const invoices = useStore(() => store.getInvoicesForContainer(c.container));
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="text-sm font-semibold text-red-700 flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4" /> Cost Detail (Payables)</h3>
+      <table className="w-full text-sm">
+        <thead><tr className="border-b"><th className="text-left py-1.5 font-semibold text-xs">Vendor</th><th className="text-left py-1.5 font-semibold text-xs">Line Item</th><th className="text-left py-1.5 font-semibold text-xs">Invoice</th><th className="text-right py-1.5 font-semibold text-xs">Amount</th></tr></thead>
+        <tbody>
+          <tr className="border-b">
+            <td className="py-1.5">Fernando Palma</td>
+            <td className="py-1.5">Container Unload</td>
+            <td className="py-1.5"><InvoiceBadge inv={invoices.lumper} /></td>
+            <td className="py-1.5 text-right font-mono font-medium">{fmt(c.fernandoTotal)}</td>
+          </tr>
+          <tr className="border-b">
+            <td className="py-1.5">M&A Transport</td>
+            <td className="py-1.5">Drayage ($425/cntr)</td>
+            <td className="py-1.5"><InvoiceBadge inv={invoices.drayage} /></td>
+            <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maDrayageCost)}</td>
+          </tr>
+          <tr className="border-b">
+            <td className="py-1.5">M&A Transport</td>
+            <td className="py-1.5">Chassis ({c.maChassisDays} days × $30)</td>
+            <td className="py-1.5"><InvoiceBadge inv={invoices.drayage} /></td>
+            <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maChassisCost)}</td>
+          </tr>
+          <tr className="border-b">
+            <td className="py-1.5">Pallet Supplier</td>
+            <td className="py-1.5">Pallets ({c.pallets} × ${RATES.palletCost})</td>
+            <td className="py-1.5"></td>
+            <td className="py-1.5 text-right font-mono font-medium">{fmt(c.palletCost)}</td>
+          </tr>
+          <tr className="font-semibold bg-red-50/50">
+            <td className="py-2" colSpan={3}>Total Cost</td>
+            <td className="py-2 text-right font-mono text-red-700">{fmt(c.totalCost)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default function ContainerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -114,7 +167,7 @@ export default function ContainerDetail() {
             <h3 className="text-sm font-semibold mb-3">Edit Container</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: "Status", key: "status", type: "select", options: ["pending", "in-transit", "received", "unloaded", "billed", "canceled"] },
+                { label: "Status", key: "status", type: "select", options: ["pending", "in-transit", "received", "unloaded", "billed", "canceled", "on-hold"] },
                 { label: "ETA", key: "eta", type: "date" },
                 { label: "PO", key: "po", type: "text" },
                 { label: "Cartons", key: "cartons", type: "number" },
@@ -259,38 +312,7 @@ export default function ContainerDetail() {
         </div>
 
         {/* Cost Detail */}
-        <div className="bg-card border border-border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-red-700 flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4" /> Cost Detail (Payables)</h3>
-          <table className="w-full text-sm">
-            <thead><tr className="border-b"><th className="text-left py-1.5 font-semibold text-xs">Vendor</th><th className="text-left py-1.5 font-semibold text-xs">Line Item</th><th className="text-right py-1.5 font-semibold text-xs">Amount</th></tr></thead>
-            <tbody>
-              <tr className="border-b">
-                <td className="py-1.5">Fernando Palma</td>
-                <td className="py-1.5">Container Unload</td>
-                <td className="py-1.5 text-right font-mono font-medium">{fmt(c.fernandoTotal)}</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-1.5">M&A Transport</td>
-                <td className="py-1.5">Drayage ($425/cntr)</td>
-                <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maDrayageCost)}</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-1.5">M&A Transport</td>
-                <td className="py-1.5">Chassis ({c.maChassisDays} days × $30)</td>
-                <td className="py-1.5 text-right font-mono font-medium">{fmt(c.maChassisCost)}</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-1.5">Pallet Supplier</td>
-                <td className="py-1.5">Pallets ({c.pallets} × ${RATES.palletCost})</td>
-                <td className="py-1.5 text-right font-mono font-medium">{fmt(c.palletCost)}</td>
-              </tr>
-              <tr className="font-semibold bg-red-50/50">
-                <td className="py-2" colSpan={2}>Total Cost</td>
-                <td className="py-2 text-right font-mono text-red-700">{fmt(c.totalCost)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <CostDetail container={c} />
 
         {/* Gross Margin */}
         <div className={`border rounded-lg p-4 ${c.grossMargin >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
