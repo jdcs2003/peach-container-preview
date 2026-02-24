@@ -20,7 +20,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/container/new" component={AddContainer} />
       <Route path="/container/:id" component={ContainerDetail} />
-      <Route path="/inbound-tracking" component={InboundTracking} />
+      <Route path="/inbound-tracking" component={Dashboard} />
       <Route path="/extensiv-import" component={ExtensivImport} />
       <Route path="/lumper-invoices" component={LumperInvoices} />
       <Route path="/drayage-invoices" component={DrayageInvoices} />

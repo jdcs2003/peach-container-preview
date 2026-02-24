@@ -134,11 +134,11 @@ export function calculateMonthlyStorage(
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════════
 const KEYS = {
-  containers: "pw_containers_v10",
-  lumperInvoices: "pw_lumper_v10",
-  drayageInvoices: "pw_drayage_v10",
-  clientInvoices: "pw_client_v10",
-  initialized: "pw_init_v10",
+  containers: "pw_containers_v11",
+  lumperInvoices: "pw_lumper_v11",
+  drayageInvoices: "pw_drayage_v11",
+  clientInvoices: "pw_client_v11",
+  initialized: "pw_init_v11",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -234,9 +234,6 @@ function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
     "EITU9171292", "MRKU4377655", "MRSU8376705", "TRHU4848410",
     "MRSU7312429", "TRHU4341597", "FFAU6666281", "ZCSU6594851",
     "MSNU8718946", "HMMU4264969", "HMMU6542760",
-  ];
-  // Batch 4: Currently out as of 02/17 — 6 containers, PENDING
-  const batch4Ids = [
     "HMMU6867832", "TXGU8533128", "KOCU4917503",
     "MSBU5090355", "MSDU6013601", "MSDU8047581",
   ];
@@ -260,8 +257,7 @@ function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
   if (inv2) invoices.push(inv2);
   const inv3 = buildInv(batch3Ids, "MA-20260217", "2026-02-12", "M&A Transport", "paid");
   if (inv3) invoices.push(inv3);
-  const inv4 = buildInv(batch4Ids, "MA-20260217-OUT", "2026-02-16", "M&A Transport", "due");
-  if (inv4) invoices.push(inv4);
+  // MA-20260217-OUT removed — phantom invoice, containers go to Ready to Batch
   const invParma = buildInv(parmaIds, "PARMA-20260201", "2026-01-22", "Parma Transport", "paid");
   if (invParma) invoices.push(invParma);
 
