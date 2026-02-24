@@ -13,12 +13,12 @@ export default function LumperInvoices() {
   const invoices = useStore(() => store.getLumperInvoices());
   const containers = useStore(() => store.getContainers());
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [showPush, setShowPush] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [provider, setProvider] = useState("Fernando Palma");
 
   // Containers that are unloaded but not yet on any lumper invoice
   const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
-  const pushable = containers.filter(
+  const readyToBatch = containers.filter(
     (c) => (c.status === "unloaded" || c.status === "received") && c.fernandoUnloadDate && !invoicedContainers.has(c.container)
   );
 
@@ -49,13 +49,12 @@ export default function LumperInvoices() {
     store.createLumperInvoice({
       invoiceNumber: invNum,
       invoiceDate: new Date().toISOString().slice(0, 10),
-      vendor: "Fernando Palma",
+      vendor: provider,
       status: "due",
       lines,
       total,
     });
     setSelected(new Set());
-    setShowPush(false);
     toast.success(`Created lumper invoice ${invNum} for ${selContainers.length} containers`);
   };
 
@@ -68,13 +67,10 @@ export default function LumperInvoices() {
             <h1 className="text-2xl font-bold tracking-tight">Lumper Invoices</h1>
             <p className="text-sm text-muted-foreground mt-0.5">Fernando Palma — Container Unload Services</p>
           </div>
-          <button onClick={() => setShowPush(!showPush)} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Push to Lumper Payable
-          </button>
         </div>
 
         {/* Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 mb-1" />
             <div className="text-xl font-bold font-mono text-emerald-700">{fmt(totalPaid)}</div>
@@ -90,6 +86,11 @@ export default function LumperInvoices() {
             <div className="text-xl font-bold font-mono">{totalContainers}</div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Containers Unloaded</div>
           </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <Clock className="w-5 h-5 text-amber-600 mb-1" />
+            <div className="text-xl font-bold font-mono text-amber-700">{readyToBatch.length}</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Ready to Batch</div>
+          </div>
           <div className="bg-card border border-border rounded-lg p-4">
             <FileText className="w-5 h-5 text-muted-foreground mb-1" />
             <div className="text-xl font-bold font-mono">{invoices.length}</div>
@@ -97,62 +98,67 @@ export default function LumperInvoices() {
           </div>
         </div>
 
-        {/* Push to Lumper Payable */}
-        {showPush && (
-          <div className="bg-card border-2 border-primary/20 rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              <HardHat className="w-4 h-4" /> Select Unloaded Containers to Create Lumper Invoice
-            </h3>
-            {pushable.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No unloaded containers without a lumper invoice. Mark containers as unloaded first.</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto mb-3">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-muted/50 text-muted-foreground">
-                        <th className="text-center px-3 py-2 w-8">
-                          <input type="checkbox" checked={selected.size === pushable.length && pushable.length > 0}
-                            onChange={() => { selected.size === pushable.length ? setSelected(new Set()) : setSelected(new Set(pushable.map((c) => c.container))); }} />
-                        </th>
-                        <th className="text-left px-3 py-2 font-medium">Container</th>
-                        <th className="text-left px-3 py-2 font-medium">Period</th>
-                        <th className="text-right px-3 py-2 font-medium">Cartons</th>
-                        <th className="text-right px-3 py-2 font-medium">SKUs</th>
-                        <th className="text-right px-3 py-2 font-medium">Rate</th>
-                        <th className="text-left px-3 py-2 font-medium">Unload Date</th>
+        {/* Ready to Batch — always visible */}
+        <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-amber-800">
+            <HardHat className="w-4 h-4" /> Ready to Batch ({readyToBatch.length})
+            <span className="text-xs font-normal text-amber-600 ml-1">— Unloaded containers not yet on a lumper invoice</span>
+          </h3>
+          {readyToBatch.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No containers ready to batch. Containers appear here after they are unloaded by Freddy.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto mb-3">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-amber-100/50 text-muted-foreground">
+                      <th className="text-center px-3 py-2 w-8">
+                        <input type="checkbox" checked={selected.size === readyToBatch.length && readyToBatch.length > 0}
+                          onChange={() => { selected.size === readyToBatch.length ? setSelected(new Set()) : setSelected(new Set(readyToBatch.map((c) => c.container))); }} />
+                      </th>
+                      <th className="text-left px-3 py-2 font-medium">Container</th>
+                      <th className="text-left px-3 py-2 font-medium">Period</th>
+                      <th className="text-right px-3 py-2 font-medium">Cartons</th>
+                      <th className="text-right px-3 py-2 font-medium">SKUs</th>
+                      <th className="text-right px-3 py-2 font-medium">Rate</th>
+                      <th className="text-left px-3 py-2 font-medium">Unload Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {readyToBatch.map((c) => (
+                      <tr key={c.container} className={`border-t border-amber-200/50 hover:bg-amber-100/30 ${selected.has(c.container) ? "bg-amber-100/50" : ""}`}>
+                        <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
+                        <td className="px-3 py-2"><Link href={`/container/${c.container}`}><span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.container}</span></Link></td>
+                        <td className="px-3 py-2">{c.period}</td>
+                        <td className="px-3 py-2 text-right font-mono">{c.cartons.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-mono">{c.skuCount}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(c.fernandoRate)}</td>
+                        <td className="px-3 py-2">{c.fernandoUnloadDate}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {pushable.map((c) => (
-                        <tr key={c.container} className="border-t border-border hover:bg-muted/30">
-                          <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
-                          <td className="px-3 py-2 font-mono font-semibold">{c.container}</td>
-                          <td className="px-3 py-2">{c.period}</td>
-                          <td className="px-3 py-2 text-right font-mono">{c.cartons.toLocaleString()}</td>
-                          <td className="px-3 py-2 text-right font-mono">{c.skuCount}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmt(c.fernandoRate)}</td>
-                          <td className="px-3 py-2">{c.fernandoUnloadDate}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center gap-3">
+                <select value={provider} onChange={(e) => setProvider(e.target.value)} className="px-3 py-2 text-sm border border-border rounded-md bg-background">
+                  <option value="Fernando Palma">Fernando Palma</option>
+                  <option value="Other">Other</option>
+                </select>
                 <button onClick={createInvoice} disabled={selected.size === 0}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90">
-                  Create Invoice ({selected.size} containers · {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.fernandoRate, 0))})
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90 flex items-center gap-1.5">
+                  <Plus className="w-3.5 h-3.5" /> Create Invoice ({selected.size} containers · {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.fernandoRate, 0))})
                 </button>
-              </>
-            )}
-          </div>
-        )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Invoice List */}
         <div className="space-y-3">
-          {invoices.length === 0 && (
+          {invoices.length === 0 && readyToBatch.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               <HardHat className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>No lumper invoices yet. Push unloaded containers to create one.</p>
+              <p>No lumper invoices yet. Containers appear in Ready to Batch after they are unloaded.</p>
             </div>
           )}
           {invoices.map((inv) => (

@@ -8,7 +8,7 @@ import {
   Clock, AlertCircle, CheckCircle2, ArrowUpRight, Warehouse, AlertTriangle,
   BarChart3, Download, ChevronUp, ChevronDown, Filter, X
 } from "lucide-react";
-import { exportContainersToExcel } from "@/lib/exportExcel";
+import { exportContainersToExcel, exportCustomerView } from "@/lib/exportExcel";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -159,8 +159,11 @@ export default function Dashboard() {
             <Link href="/extensiv-import">
               <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent">Import Extensiv</button>
             </Link>
-            <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent" onClick={() => { exportContainersToExcel(active); toast.success("Exported"); }}>
-              <Download className="w-3.5 h-3.5 inline mr-1" />Export
+            <button className="px-3 py-1.5 text-sm border border-border rounded-md hover:bg-accent" onClick={() => { exportContainersToExcel(active); toast.success("Exported all columns"); }}>
+              <Download className="w-3.5 h-3.5 inline mr-1" />Export All
+            </button>
+            <button className="px-3 py-1.5 text-sm bg-[#1F4E79] text-white rounded-md hover:opacity-90" onClick={() => { exportCustomerView(active); toast.success("Exported DO Tracker for client"); }}>
+              <Download className="w-3.5 h-3.5 inline mr-1" />Customer View
             </button>
           </div>
         </div>

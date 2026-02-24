@@ -13,8 +13,8 @@ export default function DrayageInvoices() {
   const invoices = useStore(() => store.getDrayageInvoices());
   const containers = useStore(() => store.getContainers());
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [showPush, setShowPush] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [provider, setProvider] = useState("M&A Transport");
 
   const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
 
@@ -47,8 +47,8 @@ export default function DrayageInvoices() {
     }));
     const total = lines.reduce((s, l) => s + l.total, 0);
     const invNum = `MA-2026-${String(invoices.length + 1).padStart(3, "0")}`;
-    store.createDrayageInvoice({ invoiceNumber: invNum, invoiceDate: new Date().toISOString().slice(0, 10), vendor: "M&A Transport", status: "due", lines, total });
-    setSelected(new Set()); setShowPush(false);
+    store.createDrayageInvoice({ invoiceNumber: invNum, invoiceDate: new Date().toISOString().slice(0, 10), vendor: provider, status: "due", lines, total });
+    setSelected(new Set());
     toast.success(`Created drayage invoice ${invNum} for ${sel.length} containers`);
   };
 
@@ -61,9 +61,7 @@ export default function DrayageInvoices() {
             <h1 className="text-2xl font-bold tracking-tight">Drayage Invoices</h1>
             <p className="text-sm text-muted-foreground mt-0.5">M&A Transport — Container Drayage & Chassis</p>
           </div>
-          <button onClick={() => setShowPush(!showPush)} className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:opacity-90 flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Push to Drayage Payable
-          </button>
+
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -127,52 +125,57 @@ export default function DrayageInvoices() {
           </div>
         )}
 
-        {/* Push to Drayage - only returned containers */}
-        {showPush && (
-          <div className="bg-card border-2 border-primary/20 rounded-lg p-4">
-            <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              <Truck className="w-4 h-4" /> Ready to Batch — Returned to Port ({readyToBatch.length})
-              <span className="text-xs font-normal text-muted-foreground ml-1">— Empty returned, drayage complete</span>
-            </h3>
-            {readyToBatch.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No containers ready to batch. Containers must have both pickup and return dates (empty returned to port).</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto mb-3">
-                  <table className="w-full text-xs">
-                    <thead><tr className="bg-muted/50 text-muted-foreground">
-                      <th className="text-center px-3 py-2 w-8"><input type="checkbox" checked={selected.size === readyToBatch.length && readyToBatch.length > 0} onChange={() => { selected.size === readyToBatch.length ? setSelected(new Set()) : setSelected(new Set(readyToBatch.map((c) => c.container))); }} /></th>
-                      <th className="text-left px-3 py-2 font-medium">Container</th>
-                      <th className="text-left px-3 py-2 font-medium">Pickup</th>
-                      <th className="text-left px-3 py-2 font-medium">Return</th>
-                      <th className="text-right px-3 py-2 font-medium">Days</th>
-                      <th className="text-right px-3 py-2 font-medium">Drayage</th>
-                      <th className="text-right px-3 py-2 font-medium">Chassis</th>
-                      <th className="text-right px-3 py-2 font-medium">Total</th>
-                    </tr></thead>
-                    <tbody>
-                      {readyToBatch.map((c) => (
-                        <tr key={c.container} className="border-t border-border hover:bg-muted/30">
-                          <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
-                          <td className="px-3 py-2 font-mono font-semibold">{c.container}</td>
-                          <td className="px-3 py-2">{c.maPickup}</td>
-                          <td className="px-3 py-2">{c.maReturn || "—"}</td>
-                          <td className="px-3 py-2 text-right font-mono">{c.maChassisDays}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmt(c.maDrayageCost)}</td>
-                          <td className="px-3 py-2 text-right font-mono">{fmt(c.maChassisCost)}</td>
-                          <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(c.maDrayageCost + c.maChassisCost)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button onClick={createInvoice} disabled={selected.size === 0} className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90">
-                  Create Invoice ({selected.size} containers · {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.maDrayageCost + c.maChassisCost, 0))})
-                </button>
-              </>
-            )}
-          </div>
-        )}
+        {/* Ready to Batch — always visible */}
+        <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2 text-amber-800">
+            <RotateCcw className="w-4 h-4" /> Ready to Batch ({readyToBatch.length})
+            <span className="text-xs font-normal text-amber-600 ml-1">— Empty returned to port, select containers to create invoice</span>
+          </h3>
+          {readyToBatch.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No containers ready to batch. Containers appear here after the empty is returned to the port.</p>
+          ) : (
+            <>
+            <div className="overflow-x-auto mb-3">
+              <table className="w-full text-xs">
+                <thead><tr className="bg-amber-100/50 text-muted-foreground">
+                  <th className="text-center px-3 py-2 w-8"><input type="checkbox" checked={selected.size === readyToBatch.length && readyToBatch.length > 0} onChange={() => { selected.size === readyToBatch.length ? setSelected(new Set()) : setSelected(new Set(readyToBatch.map((c) => c.container))); }} /></th>
+                  <th className="text-left px-3 py-2 font-medium">Container</th>
+                  <th className="text-left px-3 py-2 font-medium">Pickup</th>
+                  <th className="text-left px-3 py-2 font-medium">Return</th>
+                  <th className="text-right px-3 py-2 font-medium">Days</th>
+                  <th className="text-right px-3 py-2 font-medium">Drayage</th>
+                  <th className="text-right px-3 py-2 font-medium">Chassis</th>
+                  <th className="text-right px-3 py-2 font-medium">Total</th>
+                </tr></thead>
+                <tbody>
+                  {readyToBatch.map((c) => (
+                    <tr key={c.container} className={`border-t border-amber-200/50 hover:bg-amber-100/30 ${selected.has(c.container) ? "bg-amber-100/50" : ""}`}>
+                      <td className="text-center px-3 py-2"><input type="checkbox" checked={selected.has(c.container)} onChange={() => toggleSelect(c.container)} /></td>
+                      <td className="px-3 py-2"><Link href={`/container/${c.container}`}><span className="font-mono font-semibold text-primary hover:underline cursor-pointer">{c.container}</span></Link></td>
+                      <td className="px-3 py-2">{c.maPickup}</td>
+                      <td className="px-3 py-2">{c.maReturn || "\u2014"}</td>
+                      <td className="px-3 py-2 text-right font-mono">{c.maChassisDays}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmt(c.maDrayageCost)}</td>
+                      <td className="px-3 py-2 text-right font-mono">{fmt(c.maChassisCost)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(c.maDrayageCost + c.maChassisCost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-3">
+              <select value={provider} onChange={(e) => setProvider(e.target.value)} className="px-3 py-2 text-sm border border-border rounded-md bg-background">
+                <option value="M&A Transport">M&A Transport</option>
+                <option value="Parma Transport">Parma Transport</option>
+                <option value="Other">Other</option>
+              </select>
+              <button onClick={createInvoice} disabled={selected.size === 0} className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50 hover:opacity-90 flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Create Invoice ({selected.size} containers \u00b7 {fmt(containers.filter((c) => selected.has(c.container)).reduce((s, c) => s + c.maDrayageCost + c.maChassisCost, 0))})
+              </button>
+            </div>
+            </>
+          )}
+        </div>
 
         <div className="space-y-3">
           {invoices.length === 0 && (
