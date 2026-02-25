@@ -464,9 +464,18 @@ class Store {
           period = `${months[d.getMonth()]} ${wk}`;
         } catch { /* ignore */ }
       }
+      const mappedStatus = statusMap[row.status] || "pending";
+      // When imported as received/unloaded, set the unload date from arrival
+      let unloadDate = "";
+      if (mappedStatus === "unloaded" && row.arrival) {
+        try {
+          const d = new Date(row.arrival);
+          unloadDate = d.toISOString().split("T")[0];
+        } catch { /* ignore */ }
+      }
       this.addContainer({
         container: row.container,
-        status: statusMap[row.status] || "pending",
+        status: mappedStatus,
         eta: row.arrival,
         period,
         po: row.po,
@@ -474,6 +483,7 @@ class Store {
         skuCount: row.skuCount,
         notes: row.notes,
         inExtensiv: true,
+        fernandoUnloadDate: unloadDate,
       });
     }
   }
@@ -481,7 +491,17 @@ class Store {
   /** Apply a single change from Extensiv diff */
   applyExtensivChange(container: string, field: string, value: string): void {
     const updates: Partial<Container> = {};
-    if (field === "status") updates.status = value as Container["status"];
+    if (field === "status") {
+      updates.status = value as Container["status"];
+      // When status changes to unloaded/received, auto-set fernandoUnloadDate
+      if (value === "unloaded" || value === "received") {
+        const existing = this.getContainer(container);
+        if (existing && !existing.fernandoUnloadDate) {
+          // Use the container's ETA as the unload date
+          updates.fernandoUnloadDate = existing.eta ? new Date(existing.eta).toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+        }
+      }
+    }
     else if (field === "cartons") updates.cartons = parseInt(value) || 0;
     else if (field === "po") updates.po = value;
     else if (field === "eta") updates.eta = value;
@@ -511,6 +531,22 @@ class Store {
     }
   }
 
+  removeContainerFromLumperInvoice(invoiceNumber: string, containerId: string): void {
+    const invoices = this.getLumperInvoices();
+    const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
+    if (!inv) return;
+    inv.lines = inv.lines.filter((l) => l.container !== containerId);
+    inv.totalAmount = inv.lines.reduce((s, l) => s + l.rate, 0);
+    if (inv.lines.length === 0) {
+      // Remove empty invoice entirely
+      const filtered = invoices.filter((i) => i.invoiceNumber !== invoiceNumber);
+      localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(filtered));
+    } else {
+      localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(invoices));
+    }
+    this.notify();
+  }
+
   // ── Drayage Invoices ──
   getDrayageInvoices(): DrayageInvoice[] {
     try { return JSON.parse(localStorage.getItem(KEYS.drayageInvoices) || "[]"); }
@@ -532,6 +568,21 @@ class Store {
       localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
       this.notify();
     }
+  }
+
+  removeContainerFromDrayageInvoice(invoiceNumber: string, containerId: string): void {
+    const invoices = this.getDrayageInvoices();
+    const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
+    if (!inv) return;
+    inv.lines = inv.lines.filter((l) => l.container !== containerId);
+    inv.totalAmount = inv.lines.reduce((s, l) => s + l.total, 0);
+    if (inv.lines.length === 0) {
+      const filtered = invoices.filter((i) => i.invoiceNumber !== invoiceNumber);
+      localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(filtered));
+    } else {
+      localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
+    }
+    this.notify();
   }
 
   // ── Client Invoices ──

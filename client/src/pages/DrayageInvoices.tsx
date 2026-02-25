@@ -4,7 +4,7 @@ import { useStore } from "@/hooks/useStore";
 import { exportDrayageInvoiceToExcel } from "@/lib/exportExcel";
 import { Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Download, CheckCircle2, Plus, Truck, FileText, AlertCircle, ChevronDown, ChevronUp, Check, Clock, RotateCcw } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle2, Plus, Truck, FileText, AlertCircle, ChevronDown, ChevronUp, Check, Clock, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -212,6 +212,7 @@ export default function DrayageInvoices() {
                       <th className="text-right px-3 py-2 font-medium">Drayage</th>
                       <th className="text-right px-3 py-2 font-medium">Chassis</th>
                       <th className="text-right px-3 py-2 font-medium">Total</th>
+                      <th className="w-8"></th>
                     </tr></thead>
                     <tbody>
                       {inv.lines.map((l) => (
@@ -223,10 +224,16 @@ export default function DrayageInvoices() {
                           <td className="px-3 py-2 text-right font-mono">{fmt(l.containerFee)}</td>
                           <td className="px-3 py-2 text-right font-mono">{fmt(l.chassisFee)}</td>
                           <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(l.total)}</td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); if (confirm(`Remove ${l.container} from ${inv.invoiceNumber}?`)) { store.removeContainerFromDrayageInvoice(inv.invoiceNumber, l.container); toast.success(`Removed ${l.container} from batch`); } }}
+                              className="text-red-400 hover:text-red-600 transition-colors" title="Remove from batch"
+                            ><X className="w-3.5 h-3.5" /></button>
+                          </td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td colSpan={6} className="px-3 py-2 font-semibold text-right">Total</td>
+                        <td colSpan={7} className="px-3 py-2 font-semibold text-right">Total</td>
                         <td className="px-3 py-2 text-right font-mono font-bold">{fmt(inv.total)}</td>
                       </tr>
                     </tbody>

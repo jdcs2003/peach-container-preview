@@ -4,7 +4,7 @@ import { useStore } from "@/hooks/useStore";
 import { exportLumperInvoiceToExcel } from "@/lib/exportExcel";
 import { Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Download, CheckCircle2, Clock, Plus, HardHat, FileText, AlertCircle, ChevronDown, ChevronUp, Check } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle2, Clock, Plus, HardHat, FileText, AlertCircle, ChevronDown, ChevronUp, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -197,6 +197,7 @@ export default function LumperInvoices() {
                         <th className="text-right px-3 py-2 font-medium">SKUs</th>
                         <th className="text-left px-3 py-2 font-medium">Unload Date</th>
                         <th className="text-right px-3 py-2 font-medium">Rate</th>
+                        <th className="w-8"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -209,10 +210,16 @@ export default function LumperInvoices() {
                           <td className="px-3 py-2 text-right font-mono">{l.skuCount}</td>
                           <td className="px-3 py-2">{l.unloadDate}</td>
                           <td className="px-3 py-2 text-right font-mono font-medium">{fmt(l.rate)}</td>
+                          <td className="px-3 py-2 text-center">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); if (confirm(`Remove ${l.container} from ${inv.invoiceNumber}?`)) { store.removeContainerFromLumperInvoice(inv.invoiceNumber, l.container); toast.success(`Removed ${l.container} from batch`); } }}
+                              className="text-red-400 hover:text-red-600 transition-colors" title="Remove from batch"
+                            ><X className="w-3.5 h-3.5" /></button>
+                          </td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-border bg-muted/30">
-                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">Total</td>
+                        <td colSpan={5} className="px-3 py-2 font-semibold text-right">Total</td>
                         <td className="px-3 py-2 text-right font-mono font-bold">{fmt(inv.total)}</td>
                       </tr>
                     </tbody>
