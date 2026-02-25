@@ -217,12 +217,11 @@ function buildSeedDrayageInvoices(containers: Container[]): DrayageInvoice[] {
     };
   };
 
-  // Batch 1: MA-20260201 — 14 containers, $8,200 PAID
+  // Batch 1: MA-20260201 — 10 containers, $5,630 PAID
   const batch1Ids = [
-    "MRKU5545938", "MRKU3725416", "MRKU2402234", "TCNU8150661", "MSKU1928437",
-    "MRSU4926151", "SUDU8795010", "MRKU5416587", "BMOU4244012", "WHSU9015409",
-    "CAAU7482454", "ONEU1919230", "ONEU5253590", "TRHU5016591",
-    "TCNU7918159", "HASU4886399",
+    "MRKU5545938", "MRKU3725416", "TCNU8150661", "MRKU2402234",
+    "MRSU4926151", "MSKU1928437", "MRKU5416587", "SUDU8795010",
+    "ONEU1919230", "ONEU5253590",
   ];
   // Batch 2: MA-20260204 — 8 containers, $3,970 PAID
   const batch2Ids = [
