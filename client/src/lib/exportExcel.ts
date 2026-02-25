@@ -61,10 +61,26 @@ export function exportCustomerView(containers: Container[], filename?: string) {
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-  // Sort by ETA ascending
+  // Determine action needed for sorting
+  const getAction = (c: Container) => {
+    if (!c.doReceived && !c.plReceived) return "NEED DO & PL";
+    if (!c.doReceived) return "NEED DO";
+    if (!c.plReceived) return "NEED PL";
+    return "";
+  };
+
+  // Sort: Action Needed first (by ETA oldest→newest), then rest (by ETA oldest→newest)
   const sorted = [...containers]
     .filter((c) => c.status !== "canceled")
-    .sort((a, b) => (a.eta || "9999").localeCompare(b.eta || "9999"));
+    .sort((a, b) => {
+      const aAction = getAction(a) !== "";
+      const bAction = getAction(b) !== "";
+      // Action needed comes first
+      if (aAction && !bAction) return -1;
+      if (!aAction && bAction) return 1;
+      // Within same group, sort by ETA oldest to newest
+      return (a.eta || "9999").localeCompare(b.eta || "9999");
+    });
 
   // Summary counts
   const total = sorted.length;
@@ -155,10 +171,7 @@ export function exportCustomerView(containers: Container[], filename?: string) {
 
   // Data rows
   for (const c of sorted) {
-    const actions: string[] = [];
-    if (!c.doReceived && !c.plReceived) actions.push("NEED DO & PL");
-    else if (!c.doReceived) actions.push("NEED DO");
-    else if (!c.plReceived) actions.push("NEED PL");
+    const action = getAction(c);
     rows.push([
       "",
       c.container,
@@ -166,7 +179,7 @@ export function exportCustomerView(containers: Container[], filename?: string) {
       c.inExtensiv ? "YES" : "NO",
       c.doReceived ? "YES" : "NO",
       c.plReceived ? "YES" : "NO",
-      actions.length > 0 ? actions.join(", ") : "",
+      action,
     ]);
   }
 
