@@ -531,6 +531,12 @@ class Store {
     }
   }
 
+  deleteLumperInvoice(invoiceNumber: string): void {
+    const invoices = this.getLumperInvoices().filter((i) => i.invoiceNumber !== invoiceNumber);
+    localStorage.setItem(KEYS.lumperInvoices, JSON.stringify(invoices));
+    this.notify();
+  }
+
   removeContainerFromLumperInvoice(invoiceNumber: string, containerId: string): void {
     const invoices = this.getLumperInvoices();
     const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
@@ -568,6 +574,12 @@ class Store {
       localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
       this.notify();
     }
+  }
+
+  deleteDrayageInvoice(invoiceNumber: string): void {
+    const invoices = this.getDrayageInvoices().filter((i) => i.invoiceNumber !== invoiceNumber);
+    localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
+    this.notify();
   }
 
   removeContainerFromDrayageInvoice(invoiceNumber: string, containerId: string): void {

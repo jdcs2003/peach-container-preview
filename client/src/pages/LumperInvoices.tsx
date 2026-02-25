@@ -4,7 +4,7 @@ import { useStore } from "@/hooks/useStore";
 import { exportLumperInvoiceToExcel } from "@/lib/exportExcel";
 import { Link } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Download, CheckCircle2, Clock, Plus, HardHat, FileText, AlertCircle, ChevronDown, ChevronUp, Check, X } from "lucide-react";
+import { ArrowLeft, Download, CheckCircle2, Clock, Plus, HardHat, FileText, AlertCircle, ChevronDown, ChevronUp, Check, X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -184,6 +184,7 @@ export default function LumperInvoices() {
                       <Check className="w-3 h-3" /> Mark Paid
                     </button>
                   )}
+                  <button onClick={(e) => { e.stopPropagation(); if (confirm(`Delete invoice ${inv.invoiceNumber}? All containers will return to Ready to Batch.`)) { store.deleteLumperInvoice(inv.invoiceNumber); toast.success(`Deleted ${inv.invoiceNumber}`); } }} className="p-1 hover:bg-red-100 rounded text-red-400 hover:text-red-600 transition-colors" title="Delete Invoice"><Trash2 className="w-3.5 h-3.5" /></button>
                   {expanded === inv.invoiceNumber ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                 </div>
               </div>
