@@ -46,6 +46,33 @@ export interface DrayageInvoice {
   total: number;
 }
 
+// ═══════════════════════════════════════════════════════════
+// OUTBOUND (Freddy) INVOICE TYPES
+// ═══════════════════════════════════════════════════════════
+export interface OutboundLine {
+  date: string;
+  cases: number;
+  orders: number;
+  labelPay: number;   // cases * 0.13
+  pickPay: number;    // cases * 0.10
+  comp: number;       // labelPay + pickPay
+}
+
+export interface OutboundInvoice {
+  invoiceNumber: string;
+  invoiceDate: string;
+  vendor: string;
+  status: "paid" | "due" | "draft";
+  lines: OutboundLine[];
+  totalCases: number;
+  totalOrders: number;
+  totalLabelPay: number;
+  totalPickPay: number;
+  poFee: number;        // totalOrders * 2.50
+  total: number;        // totalLabelPay + totalPickPay + poFee
+  notes: string;
+}
+
 export interface ClientInvoiceLine {
   container: string;
   po: string;
@@ -138,6 +165,7 @@ const KEYS = {
   lumperInvoices: "pw_lumper_v11",
   drayageInvoices: "pw_drayage_v11",
   clientInvoices: "pw_client_v11",
+  outboundInvoices: "pw_outbound_v11",
   initialized: "pw_init_v11",
 };
 
@@ -594,6 +622,31 @@ class Store {
     } else {
       localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(invoices));
     }
+    this.notify();
+  }
+
+  // ── Outbound (Freddy) Invoices ──
+  getOutboundInvoices(): OutboundInvoice[] {
+    try { return JSON.parse(localStorage.getItem(KEYS.outboundInvoices) || "[]"); }
+    catch { return []; }
+  }
+
+  createOutboundInvoice(inv: OutboundInvoice): void {
+    const invoices = this.getOutboundInvoices();
+    invoices.push(inv);
+    localStorage.setItem(KEYS.outboundInvoices, JSON.stringify(invoices));
+    this.notify();
+  }
+
+  markOutboundPaid(invoiceNumber: string): void {
+    const invoices = this.getOutboundInvoices();
+    const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
+    if (inv) { inv.status = "paid"; localStorage.setItem(KEYS.outboundInvoices, JSON.stringify(invoices)); this.notify(); }
+  }
+
+  deleteOutboundInvoice(invoiceNumber: string): void {
+    const invoices = this.getOutboundInvoices().filter((i) => i.invoiceNumber !== invoiceNumber);
+    localStorage.setItem(KEYS.outboundInvoices, JSON.stringify(invoices));
     this.notify();
   }
 
