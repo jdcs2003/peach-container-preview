@@ -21,7 +21,15 @@ export const RATES = {
 export interface Container {
   id: string;
   container: string;
-  status: "pending" | "in-transit" | "received" | "unloaded" | "billed" | "canceled" | "projected" | "on-hold";
+  status: "pending" | "on-the-water" | "available-for-pickup" | "in-transit" | "unloaded" | "returned-to-pier" | "billed" | "canceled" | "on-hold";
+  statusTimestamps?: {
+    pending?: string;
+    onTheWater?: string;
+    availableForPickup?: string;
+    inTransit?: string;
+    unloaded?: string;
+    returnedToPier?: string;
+  };
   eta: string;
   period: string;
   po: string;

@@ -3,20 +3,33 @@ import { store, RATES } from "@/data/store";
 import { useStore } from "@/hooks/useStore";
 import { Link, useParams } from "wouter";
 import { useState } from "react";
-import { ArrowLeft, Package, DollarSign, Truck, HardHat, Edit2, Save, X, Calendar, BarChart3, Download, CheckCircle } from "lucide-react";
+import { ArrowLeft, Package, DollarSign, Truck, HardHat, Edit2, Save, X, Calendar, BarChart3, Download, CheckCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const statusColors: Record<string, string> = {
   pending: "bg-slate-100 text-slate-700",
-  "in-transit": "bg-amber-100 text-amber-700",
-  received: "bg-blue-100 text-blue-700",
+  "on-the-water": "bg-cyan-100 text-cyan-700",
+  "available-for-pickup": "bg-amber-100 text-amber-700",
+  "in-transit": "bg-indigo-100 text-indigo-700",
   unloaded: "bg-emerald-100 text-emerald-700",
+  "returned-to-pier": "bg-teal-100 text-teal-700",
   billed: "bg-purple-100 text-purple-700",
   canceled: "bg-red-100 text-red-700",
-  projected: "bg-gray-100 text-gray-500",
   "on-hold": "bg-orange-100 text-orange-700",
+};
+
+const statusLabels: Record<string, string> = {
+  pending: "Pending",
+  "on-the-water": "On the Water",
+  "available-for-pickup": "Available for Pick-up",
+  "in-transit": "In Transit",
+  unloaded: "Unloaded",
+  "returned-to-pier": "Returned to Pier",
+  billed: "Billed",
+  canceled: "Canceled",
+  "on-hold": "On Hold",
 };
 
 function InvoiceBadge({ inv }: { inv: { invoiceNumber: string; status: string } | null }) {
@@ -103,8 +116,20 @@ export default function ContainerDetail() {
   };
 
   const saveEdit = () => {
+    // If status changed, use changeStatus for safe timestamp tracking
+    if (form.status !== c.status) {
+      let unloadDate: string | undefined;
+      if (form.status === "unloaded" || form.status === "returned-to-pier") {
+        unloadDate = String(form.fernandoUnloadDate || "");
+        if (!unloadDate) {
+          unloadDate = prompt("Enter unload date (YYYY-MM-DD):", new Date().toISOString().split("T")[0]) || new Date().toISOString().split("T")[0];
+          form.fernandoUnloadDate = unloadDate;
+        }
+      }
+      store.changeStatus(c.container, form.status as any, unloadDate);
+    }
+    // Update other fields without touching status (already handled above)
     store.updateContainer(c.container, {
-      status: form.status as any,
       cartons: Number(form.cartons) || 0, skuCount: Number(form.skuCount) || 0,
       pallets: Number(form.pallets) || 0, billableCuft: Number(form.billableCuft) || 0,
       maChassisDays: Number(form.maChassisDays) || 0, maPickup: String(form.maPickup || ""),
@@ -117,13 +142,26 @@ export default function ContainerDetail() {
   };
 
   const markUnloaded = () => {
+    const dateStr = prompt("Enter unload date (YYYY-MM-DD):", new Date().toISOString().slice(0, 10));
+    if (!dateStr) return;
     store.markUnloaded(c.container, {
       cartons: c.cartons, skuCount: c.skuCount,
-      fernandoUnloadDate: new Date().toISOString().slice(0, 10),
+      fernandoUnloadDate: dateStr,
       fernandoRate: c.fernandoRate || RATES.fernandoBaseRate,
     });
     toast.success("Container marked as unloaded — lumper payable generated");
   };
+
+  const STATUS_FLOW = [
+    { key: "pending" as const, label: "Pending", tsKey: "pending" as const },
+    { key: "on-the-water" as const, label: "On the Water", tsKey: "onTheWater" as const },
+    { key: "available-for-pickup" as const, label: "Avail Pickup", tsKey: "availableForPickup" as const },
+    { key: "in-transit" as const, label: "In Transit", tsKey: "inTransit" as const },
+    { key: "unloaded" as const, label: "Unloaded", tsKey: "unloaded" as const },
+    { key: "returned-to-pier" as const, label: "Returned", tsKey: "returnedToPier" as const },
+  ];
+  const ts = c.statusTimestamps || {};
+  const currentIdx = STATUS_FLOW.findIndex(s => s.key === c.status);
 
   return (
     <Layout>
@@ -140,11 +178,11 @@ export default function ContainerDetail() {
                 {c.po && <span>·</span>}
                 <span>{c.period}</span>
                 <span>·</span>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${statusColors[c.status] || "bg-gray-100 text-gray-600"}`}>{c.status}</span>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase ${statusColors[c.status] || "bg-gray-100 text-gray-600"}`}>{statusLabels[c.status] || c.status}</span>
               </div>
             </div>
             <div className="flex gap-2 ml-auto">
-              {!editing && (c.status === "received" || c.status === "in-transit" || c.status === "pending") && (
+              {!editing && (c.status === "available-for-pickup" || c.status === "in-transit" || c.status === "on-the-water" || c.status === "pending") && (
                 <button onClick={markUnloaded} className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 flex items-center gap-1.5">
                   <HardHat className="w-3.5 h-3.5" /> Mark Unloaded
                 </button>
@@ -167,7 +205,7 @@ export default function ContainerDetail() {
             <h3 className="text-sm font-semibold mb-3">Edit Container</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: "Status", key: "status", type: "select", options: ["pending", "in-transit", "received", "unloaded", "billed", "canceled", "on-hold"] },
+                { label: "Status", key: "status", type: "select", options: ["pending", "on-the-water", "available-for-pickup", "in-transit", "unloaded", "returned-to-pier", "billed", "canceled", "on-hold"] },
                 { label: "ETA", key: "eta", type: "date" },
                 { label: "PO", key: "po", type: "text" },
                 { label: "Cartons", key: "cartons", type: "number" },
@@ -184,7 +222,7 @@ export default function ContainerDetail() {
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">{f.label}</label>
                   {f.type === "select" ? (
                     <select value={form[f.key] || ""} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} className="w-full mt-0.5 px-2 py-1.5 text-sm border border-border rounded-md bg-background">
-                      {f.options?.map((o) => <option key={o} value={o}>{o}</option>)}
+                      {f.options?.map((o) => <option key={o} value={o}>{statusLabels[o] || o}</option>)}
                     </select>
                   ) : (
                     <input type={f.type} value={form[f.key] ?? ""} onChange={(e) => setForm({ ...form, [f.key]: f.type === "number" ? Number(e.target.value) : e.target.value })}
@@ -199,6 +237,40 @@ export default function ContainerDetail() {
             </div>
           </div>
         )}
+
+        {/* Status Timeline */}
+        <div className="bg-card border border-border rounded-lg p-4">
+          <h3 className="text-sm font-semibold flex items-center gap-2 mb-4"><Clock className="w-4 h-4" /> Status Timeline</h3>
+          <div className="flex items-center gap-0">
+            {STATUS_FLOW.map((step, i) => {
+              const tsVal = (ts as any)[step.tsKey];
+              const isActive = step.key === c.status;
+              const isPast = currentIdx >= 0 && i < currentIdx;
+              const isFuture = currentIdx >= 0 && i > currentIdx;
+              return (
+                <div key={step.key} className="flex-1 relative">
+                  <div className="flex flex-col items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
+                      isActive ? "bg-primary text-primary-foreground border-primary" :
+                      isPast ? "bg-emerald-500 text-white border-emerald-500" :
+                      "bg-muted text-muted-foreground border-border"
+                    }`}>
+                      {isPast ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                    </div>
+                    <div className={`text-[10px] mt-1 text-center font-semibold ${isActive ? "text-primary" : isPast ? "text-emerald-700" : "text-muted-foreground"}`}>{step.label}</div>
+                    {tsVal && <div className="text-[9px] text-muted-foreground mt-0.5">{new Date(tsVal).toLocaleDateString()}</div>}
+                  </div>
+                  {i < STATUS_FLOW.length - 1 && (
+                    <div className={`absolute top-4 left-[calc(50%+16px)] right-[calc(-50%+16px)] h-0.5 ${isPast ? "bg-emerald-500" : "bg-border"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {(c.status === "on-hold" || c.status === "canceled" || c.status === "billed") && (
+            <div className="mt-3 text-xs text-muted-foreground">Current status: <span className={`font-semibold px-1.5 py-0.5 rounded ${statusColors[c.status]}`}>{statusLabels[c.status]}</span></div>
+          )}
+        </div>
 
         {/* Margin Summary */}
         <div className="grid grid-cols-3 gap-3">

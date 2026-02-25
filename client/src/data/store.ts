@@ -124,7 +124,7 @@ export function calculateMonthlyStorage(
     jan: "Jan 2026", feb: "Feb 2026", mar: "Mar 2026", apr: "Apr 2026",
   };
   for (const c of containers) {
-    if (!["unloaded", "billed", "received"].includes(c.status)) continue;
+    if (!["unloaded", "billed", "returned-to-pier"].includes(c.status)) continue;
     const firstWord = (c.period || "").split(" ")[0].toLowerCase();
     const monthKey = monthMap[firstWord] || `${(c.period || "").split(" ")[0]} 2026`;
     if (!monthKey || monthKey === " 2026") continue;
@@ -333,10 +333,16 @@ class Store {
   addContainer(data: Partial<Container>): Container {
     const containers = this.getContainers();
     const calculated = calcBilling(data) as Container;
+    const now = new Date().toISOString();
+    const initStatus = data.status || "pending";
+    const initTimestamps = data.statusTimestamps || {};
+    // Auto-set timestamp for the initial status
+    if (!initTimestamps.pending && initStatus === "pending") initTimestamps.pending = now;
     const newC: Container = {
       id: data.container || data.id || `C-${Date.now()}`,
       container: data.container || "",
-      status: data.status || "pending",
+      status: initStatus as Container["status"],
+      statusTimestamps: initTimestamps,
       eta: data.eta || "",
       period: data.period || "",
       po: data.po || "",
@@ -379,12 +385,63 @@ class Store {
     const containers = this.getContainers();
     const idx = containers.findIndex((c) => c.container === id || c.id === id);
     if (idx === -1) return null;
-    const merged = { ...containers[idx], ...updates };
+    const existing = containers[idx];
+    // Safe status change — NEVER clear existing data when status changes
+    // Only update the status field and add timestamps
+    const merged = { ...existing, ...updates };
+    // Ensure statusTimestamps exists
+    merged.statusTimestamps = { ...(existing.statusTimestamps || {}), ...(updates.statusTimestamps || {}) };
     const calculated = calcBilling(merged) as Container;
     containers[idx] = { ...merged, ...calculated };
     localStorage.setItem(KEYS.containers, JSON.stringify(containers));
     this.notify();
     return containers[idx];
+  }
+
+  /** Change container status with timestamp tracking and auto-assign logic */
+  changeStatus(id: string, newStatus: Container["status"], unloadDate?: string): Container | null {
+    const c = this.getContainer(id);
+    if (!c) return null;
+    const now = new Date().toISOString();
+    const timestamps: Record<string, string | undefined> = { ...(c.statusTimestamps || {}) };
+
+    // Status progression order for auto-assign
+    const FLOW = [
+      { status: "pending", tsKey: "pending" },
+      { status: "on-the-water", tsKey: "onTheWater" },
+      { status: "available-for-pickup", tsKey: "availableForPickup" },
+      { status: "in-transit", tsKey: "inTransit" },
+      { status: "unloaded", tsKey: "unloaded" },
+      { status: "returned-to-pier", tsKey: "returnedToPier" },
+    ] as const;
+
+    const targetIdx = FLOW.findIndex((f) => f.status === newStatus);
+
+    if (newStatus === "returned-to-pier") {
+      // Auto-assign all previous statuses with timestamps if not already set
+      for (let i = 0; i <= targetIdx; i++) {
+        if (!timestamps[FLOW[i].tsKey]) {
+          timestamps[FLOW[i].tsKey] = now;
+        }
+      }
+    } else if (targetIdx >= 0) {
+      // Set timestamp for this status
+      timestamps[FLOW[targetIdx].tsKey] = now;
+    }
+
+    // For unloaded status, set the fernandoUnloadDate
+    const updates: Partial<Container> = {
+      status: newStatus,
+      statusTimestamps: timestamps,
+    };
+
+    if (newStatus === "unloaded" || newStatus === "returned-to-pier") {
+      if (!c.fernandoUnloadDate) {
+        updates.fernandoUnloadDate = unloadDate || new Date().toISOString().split("T")[0];
+      }
+    }
+
+    return this.updateContainer(id, updates);
   }
 
   /** Mark container as arrived/unloaded — auto-generates payable records */
@@ -438,7 +495,7 @@ class Store {
       const diffs: { container: string; field: string; old: string; new_: string }[] = [];
       const statusMap: Record<string, string> = {
         RECEIVED: "unloaded",
-        "IN TRANSIT": "in-transit",
+        "IN TRANSIT": "on-the-water",
         CANCELED: "canceled",
       };
       const mappedStatus = statusMap[row.status] || row.status;
@@ -475,7 +532,7 @@ class Store {
   }>): void {
     const statusMap: Record<string, Container["status"]> = {
       RECEIVED: "unloaded",
-      "IN TRANSIT": "in-transit",
+      "IN TRANSIT": "on-the-water",
       CANCELED: "canceled",
     };
     for (const row of rows) {
@@ -521,8 +578,8 @@ class Store {
     const updates: Partial<Container> = {};
     if (field === "status") {
       updates.status = value as Container["status"];
-      // When status changes to unloaded/received, auto-set fernandoUnloadDate
-      if (value === "unloaded" || value === "received") {
+      // When status changes to unloaded/returned-to-pier, auto-set fernandoUnloadDate
+      if (value === "unloaded" || value === "returned-to-pier") {
         const existing = this.getContainer(container);
         if (existing && !existing.fernandoUnloadDate) {
           // Use the container's ETA as the unload date
@@ -570,7 +627,7 @@ class Store {
     const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
     if (!inv) return;
     inv.lines = inv.lines.filter((l) => l.container !== containerId);
-    inv.totalAmount = inv.lines.reduce((s, l) => s + l.rate, 0);
+    inv.total = inv.lines.reduce((s, l) => s + l.rate, 0);
     if (inv.lines.length === 0) {
       // Remove empty invoice entirely
       const filtered = invoices.filter((i) => i.invoiceNumber !== invoiceNumber);
@@ -615,7 +672,7 @@ class Store {
     const inv = invoices.find((i) => i.invoiceNumber === invoiceNumber);
     if (!inv) return;
     inv.lines = inv.lines.filter((l) => l.container !== containerId);
-    inv.totalAmount = inv.lines.reduce((s, l) => s + l.total, 0);
+    inv.total = inv.lines.reduce((s, l) => s + l.total, 0);
     if (inv.lines.length === 0) {
       const filtered = invoices.filter((i) => i.invoiceNumber !== invoiceNumber);
       localStorage.setItem(KEYS.drayageInvoices, JSON.stringify(filtered));

@@ -28,7 +28,7 @@ export default function AddContainer() {
     po: "",
     period: "",
     eta: "",
-    status: "pending" as "pending" | "in-transit" | "received" | "unloaded",
+    status: "pending" as "pending" | "on-the-water" | "available-for-pickup" | "in-transit" | "unloaded" | "returned-to-pier",
     notes: "",
     carrier: "M&A Transport",
     // Cargo
@@ -99,7 +99,7 @@ export default function AddContainer() {
       carrier: form.carrier,
     });
 
-    if (form.status === "unloaded" || form.status === "received") {
+    if (form.status === "unloaded" || form.status === "returned-to-pier") {
       toast.success(`Container ${form.container} added as ${form.status}. M&A drayage and lumper payables auto-generated.`);
     } else {
       toast.success(`Container ${form.container} added as ${form.status}. Billing will generate when marked as arrived.`);
@@ -136,9 +136,11 @@ export default function AddContainer() {
                     <Label className="text-xs">Status</Label>
                     <select value={form.status} onChange={e => set("status", e.target.value)} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
                       <option value="pending">Pending</option>
+                      <option value="on-the-water">On the Water</option>
+                      <option value="available-for-pickup">Available for Pick-up</option>
                       <option value="in-transit">In Transit</option>
-                      <option value="received">Received</option>
                       <option value="unloaded">Unloaded</option>
+                      <option value="returned-to-pier">Returned to Pier</option>
                     </select>
                   </div>
                 </div>
@@ -220,7 +222,7 @@ export default function AddContainer() {
 
             {/* Submit */}
             <div className="flex gap-3">
-              <Button onClick={handleSubmit} className="px-6"><Package className="w-4 h-4 mr-2" />{form.status === "unloaded" || form.status === "received" ? "Create & Generate Billing" : "Create Container"}</Button>
+              <Button onClick={handleSubmit} className="px-6"><Package className="w-4 h-4 mr-2" />{form.status === "unloaded" || form.status === "returned-to-pier" ? "Create & Generate Billing" : "Create Container"}</Button>
               <Link href="/"><Button variant="outline">Cancel</Button></Link>
             </div>
           </div>
@@ -257,7 +259,7 @@ export default function AddContainer() {
                     <span className={`font-mono ${(preview.grossMargin || 0) >= 0 ? "text-blue-700" : "text-red-700"}`}>{fmt(preview.grossMargin || 0)}</span>
                   </div>
                 </div>
-                {(form.status === "unloaded" || form.status === "received") && (
+                {(form.status === "unloaded" || form.status === "returned-to-pier") && (
                   <div className="bg-amber-50 border border-amber-200 rounded-md p-2 text-xs text-amber-800">
                     <strong>Auto-generates:</strong> M&A drayage payable ({fmt(preview.maDrayageCost || 0)}) + lumper payable ({fmt(preview.fernandoTotal || 0)}) when saved
                   </div>

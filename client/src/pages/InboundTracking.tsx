@@ -7,16 +7,31 @@ import { CheckCircle2, XCircle, Download, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  "on-the-water": "On the Water",
+  "available-for-pickup": "Avail Pickup",
+  "in-transit": "In Transit",
+  unloaded: "Unloaded",
+  "returned-to-pier": "Returned",
+  billed: "Billed",
+  "on-hold": "On Hold",
+  canceled: "Canceled",
+};
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    unloaded: "bg-emerald-100 text-emerald-700",
-    billed: "bg-blue-100 text-blue-700",
-    "in-transit": "bg-amber-100 text-amber-700",
-    received: "bg-teal-100 text-teal-700",
     pending: "bg-slate-100 text-slate-600",
-    projected: "bg-purple-100 text-purple-600",
+    "on-the-water": "bg-cyan-100 text-cyan-700",
+    "available-for-pickup": "bg-amber-100 text-amber-700",
+    "in-transit": "bg-indigo-100 text-indigo-700",
+    unloaded: "bg-emerald-100 text-emerald-700",
+    "returned-to-pier": "bg-teal-100 text-teal-700",
+    billed: "bg-blue-100 text-blue-700",
+    "on-hold": "bg-orange-100 text-orange-700",
+    canceled: "bg-red-100 text-red-600",
   };
-  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{status}</span>;
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${map[status] || "bg-gray-100"}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
@@ -37,7 +52,7 @@ export default function InboundTracking() {
 
   const active = containers.filter((c) => c.status !== "canceled");
   const filtered = active.filter((c) => {
-    if (filter === "pending") return c.status === "pending" || c.status === "in-transit" || c.status === "projected";
+    if (filter === "pending") return c.status === "pending" || c.status === "on-the-water" || c.status === "available-for-pickup" || c.status === "in-transit";
     if (filter === "action") return !c.inExtensiv || !c.plReceived || !c.doReceived;
     return true;
   });
@@ -87,7 +102,7 @@ export default function InboundTracking() {
         <div className="flex gap-2">
           {[
             { key: "all", label: `All (${active.length})` },
-            { key: "pending", label: `Pending/Transit (${active.filter((c) => c.status === "pending" || c.status === "in-transit" || c.status === "projected").length})` },
+            { key: "pending", label: `Pending/Transit (${active.filter((c) => c.status === "pending" || c.status === "on-the-water" || c.status === "available-for-pickup" || c.status === "in-transit").length})` },
             { key: "action", label: `Needs Action (${needAction})` },
           ].map((t) => (
             <button
@@ -126,7 +141,7 @@ export default function InboundTracking() {
                   if (!c.inExtensiv) actions.push("Add to Extensiv");
                   if (!c.plReceived) actions.push("Need PL");
                   if (!c.doReceived) actions.push("Need DO");
-                  if (c.status === "pending" || c.status === "in-transit") actions.push("Awaiting arrival");
+                  if (c.status === "pending" || c.status === "on-the-water" || c.status === "available-for-pickup" || c.status === "in-transit") actions.push("Awaiting arrival");
                   const actionText = actions.length > 0 ? actions.join(", ") : "Complete";
                   const isComplete = actions.length === 0;
 

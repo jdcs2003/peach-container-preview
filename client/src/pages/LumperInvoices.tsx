@@ -27,7 +27,7 @@ export default function LumperInvoices() {
   // Containers that are unloaded but not yet on any lumper invoice
   const invoicedContainers = new Set(invoices.flatMap((i) => i.lines.map((l) => l.container)));
   const readyToBatch = containers.filter(
-    (c) => (c.status === "unloaded" || c.status === "received") && c.fernandoUnloadDate && !invoicedContainers.has(c.container)
+    (c) => (c.status === "unloaded" || c.status === "returned-to-pier") && c.fernandoUnloadDate && !invoicedContainers.has(c.container)
   );
 
   const totalPaid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.total, 0);

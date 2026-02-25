@@ -14,21 +14,34 @@ import { toast } from "sonner";
 const fmt = (n: number) => "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : fmt(n);
 
-const ALL_STATUSES = ["unloaded", "billed", "in-transit", "received", "pending", "projected", "on-hold", "canceled"] as const;
+const ALL_STATUSES = ["pending", "on-the-water", "available-for-pickup", "in-transit", "unloaded", "returned-to-pier", "billed", "on-hold", "canceled"] as const;
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  "on-the-water": "On the Water",
+  "available-for-pickup": "Available for Pick-up",
+  "in-transit": "In Transit",
+  unloaded: "Unloaded",
+  "returned-to-pier": "Returned to Pier",
+  billed: "Billed",
+  "on-hold": "On Hold",
+  canceled: "Canceled",
+};
 
 const STATUS_COLORS: Record<string, string> = {
-  unloaded: "bg-emerald-100 text-emerald-700",
-  billed: "bg-blue-100 text-blue-700",
-  "in-transit": "bg-amber-100 text-amber-700",
-  received: "bg-teal-100 text-teal-700",
   pending: "bg-slate-100 text-slate-600",
-  projected: "bg-purple-100 text-purple-600",
-  canceled: "bg-red-100 text-red-600",
+  "on-the-water": "bg-cyan-100 text-cyan-700",
+  "available-for-pickup": "bg-amber-100 text-amber-700",
+  "in-transit": "bg-indigo-100 text-indigo-700",
+  unloaded: "bg-emerald-100 text-emerald-700",
+  "returned-to-pier": "bg-teal-100 text-teal-700",
+  billed: "bg-blue-100 text-blue-700",
   "on-hold": "bg-orange-100 text-orange-700",
+  canceled: "bg-red-100 text-red-600",
 };
 
 function StatusBadge({ status }: { status: string }) {
-  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${STATUS_COLORS[status] || "bg-gray-100"}`}>{status}</span>;
+  return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${STATUS_COLORS[status] || "bg-gray-100"}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
 type SortKey = "container" | "status" | "period" | "eta" | "cartons" | "cuft" | "revenue" | "cost" | "margin" | "billed";
@@ -85,10 +98,13 @@ export default function Dashboard() {
 
   const active = containers.filter((c) => c.status !== "canceled");
   const unloaded = active.filter((c) => c.status === "unloaded" || c.status === "billed");
+  const onTheWater = active.filter((c) => c.status === "on-the-water");
+  const availableForPickup = active.filter((c) => c.status === "available-for-pickup");
   const inTransit = active.filter((c) => c.status === "in-transit");
-  const pending = active.filter((c) => c.status === "pending" || c.status === "projected");
+  const returnedToPier = active.filter((c) => c.status === "returned-to-pier");
+  const pending = active.filter((c) => c.status === "pending");
   const onHold = active.filter((c) => c.status === "on-hold");
-  const unbilled = active.filter((c) => !c.billed && (c.status === "unloaded" || c.status === "received"));
+  const unbilled = active.filter((c) => !c.billed && (c.status === "unloaded" || c.status === "returned-to-pier"));
 
   const totalRev = active.reduce((s, c) => s + c.totalRevenue, 0);
   const totalCost = active.reduce((s, c) => s + c.totalCost, 0);
@@ -131,7 +147,7 @@ export default function Dashboard() {
   const applyBulkStatus = () => {
     if (!bulkStatus || selected.size === 0) return;
     selected.forEach((cid) => {
-      store.updateContainer(cid, { status: bulkStatus as any });
+      store.changeStatus(cid, bulkStatus as any);
     });
     toast.success(`Updated ${selected.size} containers to "${bulkStatus}"`);
     setSelected(new Set());
@@ -173,7 +189,10 @@ export default function Dashboard() {
           {[
             { label: "Total", value: active.length, icon: Package, color: "text-blue-600", bg: "bg-blue-50", border: "border-l-blue-500" },
             { label: "Unloaded", value: unloaded.length, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-emerald-500" },
-            { label: "In Transit", value: inTransit.length, icon: Truck, color: "text-amber-600", bg: "bg-amber-50", border: "border-l-amber-500" },
+            { label: "On Water", value: onTheWater.length, icon: Truck, color: "text-cyan-600", bg: "bg-cyan-50", border: "border-l-cyan-500" },
+            { label: "Avail Pickup", value: availableForPickup.length, icon: AlertCircle, color: "text-amber-600", bg: "bg-amber-50", border: "border-l-amber-500" },
+            { label: "In Transit", value: inTransit.length, icon: Truck, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-l-indigo-500" },
+            { label: "Returned", value: returnedToPier.length, icon: CheckCircle2, color: "text-teal-600", bg: "bg-teal-50", border: "border-l-teal-500" },
             { label: "Pending", value: pending.length, icon: Clock, color: "text-slate-500", bg: "bg-slate-50", border: "border-l-slate-400" },
             { label: "On Hold", value: onHold.length, icon: AlertCircle, color: "text-orange-600", bg: "bg-orange-50", border: "border-l-orange-500" },
             { label: "Revenue", value: fmtK(adjustedRev), icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-l-green-500" },
@@ -302,7 +321,7 @@ export default function Dashboard() {
                   const count = s === "canceled"
                     ? containers.filter((c) => c.status === "canceled").length
                     : active.filter((c) => c.status === s).length;
-                  return count > 0 ? <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)} ({count})</option> : null;
+                  return count > 0 ? <option key={s} value={s}>{STATUS_LABELS[s] || s} ({count})</option> : null;
                 })}
               </select>
               <span className="text-xs text-muted-foreground">{sorted.length} shown</span>
@@ -320,7 +339,7 @@ export default function Dashboard() {
               >
                 <option value="">Change status to...</option>
                 {ALL_STATUSES.map((s) => (
-                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                  <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
                 ))}
               </select>
               <button

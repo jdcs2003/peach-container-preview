@@ -35,9 +35,9 @@ export default function BatchInvoice() {
   // Filter containers based on invoice type
   const eligible = useMemo(() => {
     return containers.filter(c => {
-      if (invoiceType === "lumper") return (c.status === "unloaded" || c.status === "received") && c.fernandoTotal > 0;
+      if (invoiceType === "lumper") return (c.status === "unloaded" || c.status === "returned-to-pier") && c.fernandoTotal > 0;
       if (invoiceType === "drayage") return c.maDrayageCost > 0 || c.maChassisCost > 0;
-      if (invoiceType === "client") return (c.status === "unloaded" || c.status === "received") && !c.billed;
+      if (invoiceType === "client") return (c.status === "unloaded" || c.status === "returned-to-pier") && !c.billed;
       return false;
     });
   }, [containers, invoiceType]);
