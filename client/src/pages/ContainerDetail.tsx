@@ -119,6 +119,7 @@ export default function ContainerDetail() {
     // If status changed, use changeStatus for safe timestamp tracking
     if (form.status !== c.status) {
       let unloadDate: string | undefined;
+      let availableDate: string | undefined;
       if (form.status === "unloaded" || form.status === "returned-to-pier") {
         unloadDate = String(form.fernandoUnloadDate || "");
         if (!unloadDate) {
@@ -126,7 +127,10 @@ export default function ContainerDetail() {
           form.fernandoUnloadDate = unloadDate;
         }
       }
-      store.changeStatus(c.container, form.status as any, unloadDate);
+      if (form.status === "available-for-pickup" || form.status === "returned-to-pier") {
+        availableDate = prompt("Enter date available for pick-up (YYYY-MM-DD):", new Date().toISOString().split("T")[0]) || new Date().toISOString().split("T")[0];
+      }
+      store.changeStatus(c.container, form.status as any, { unloadDate, availableDate });
     }
     // Update other fields without touching status (already handled above)
     store.updateContainer(c.container, {

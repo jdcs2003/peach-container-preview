@@ -44,7 +44,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider ${STATUS_COLORS[status] || "bg-gray-100"}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
-type SortKey = "container" | "status" | "period" | "eta" | "cartons" | "cuft" | "revenue" | "cost" | "margin" | "billed";
+type SortKey = "container" | "status" | "period" | "eta" | "lfd" | "cartons" | "cuft" | "revenue" | "cost" | "margin" | "billed";
 type SortDir = "asc" | "desc";
 
 function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey; sortDir: SortDir }) {
@@ -62,6 +62,7 @@ function sortContainers(list: Container[], key: SortKey, dir: SortDir): Containe
       case "status": cmp = a.status.localeCompare(b.status); break;
       case "period": cmp = a.period.localeCompare(b.period); break;
       case "eta": cmp = (a.eta || "").localeCompare(b.eta || ""); break;
+      case "lfd": cmp = (a.lfd || "").localeCompare(b.lfd || ""); break;
       case "cartons": cmp = a.cartons - b.cartons; break;
       case "cuft": cmp = a.billableCuft - b.billableCuft; break;
       case "revenue": cmp = a.totalRevenue - b.totalRevenue; break;
@@ -382,6 +383,9 @@ export default function Dashboard() {
                   <th className={`text-left ${thClass}`} onClick={() => handleSort("eta")}>
                     ETA <SortIcon column="eta" sortKey={sortKey} sortDir={sortDir} />
                   </th>
+                  <th className={`text-left ${thClass}`} onClick={() => handleSort("lfd")}>
+                    LFD <SortIcon column="lfd" sortKey={sortKey} sortDir={sortDir} />
+                  </th>
                   <th className={`text-right ${thClass}`} onClick={() => handleSort("cartons")}>
                     Cartons <SortIcon column="cartons" sortKey={sortKey} sortDir={sortDir} />
                   </th>
@@ -421,6 +425,7 @@ export default function Dashboard() {
                     <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
                     <td className="px-3 py-2 text-muted-foreground">{c.period}</td>
                     <td className="px-3 py-2 text-muted-foreground">{c.eta || "TBD"}</td>
+                    <td className={`px-3 py-2 font-mono ${c.lfd && new Date(c.lfd) < new Date() ? "text-red-600 font-bold" : c.lfd && new Date(c.lfd).toISOString().split('T')[0] === new Date().toISOString().split('T')[0] ? "text-amber-600 font-semibold" : "text-muted-foreground"}`}>{c.lfd || "—"}</td>
                     <td className="px-3 py-2 text-right font-mono">{c.cartons > 0 ? c.cartons.toLocaleString() : "—"}</td>
                     <td className="px-3 py-2 text-right font-mono">{c.billableCuft > 0 ? c.billableCuft.toLocaleString() : "—"}</td>
                     <td className="px-3 py-2 text-right font-mono text-emerald-600">{c.totalRevenue > 0 ? fmt(c.totalRevenue) : "—"}</td>

@@ -399,7 +399,7 @@ class Store {
   }
 
   /** Change container status with timestamp tracking and auto-assign logic */
-  changeStatus(id: string, newStatus: Container["status"], unloadDate?: string): Container | null {
+  changeStatus(id: string, newStatus: Container["status"], opts?: { unloadDate?: string; availableDate?: string }): Container | null {
     const c = this.getContainer(id);
     if (!c) return null;
     const now = new Date().toISOString();
@@ -437,7 +437,18 @@ class Store {
 
     if (newStatus === "unloaded" || newStatus === "returned-to-pier") {
       if (!c.fernandoUnloadDate) {
-        updates.fernandoUnloadDate = unloadDate || new Date().toISOString().split("T")[0];
+        updates.fernandoUnloadDate = opts?.unloadDate || new Date().toISOString().split("T")[0];
+      }
+    }
+
+    // For available-for-pickup, set the date and calculate LFD (+4 days)
+    if (newStatus === "available-for-pickup" || newStatus === "returned-to-pier") {
+      if (!c.availableForPickupDate || newStatus === "available-for-pickup") {
+        const avDate = opts?.availableDate || new Date().toISOString().split("T")[0];
+        updates.availableForPickupDate = avDate;
+        const lfdDate = new Date(avDate);
+        lfdDate.setDate(lfdDate.getDate() + 4);
+        updates.lfd = lfdDate.toISOString().split("T")[0];
       }
     }
 

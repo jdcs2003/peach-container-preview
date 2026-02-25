@@ -68,6 +68,10 @@ export interface Container {
   // Margin
   grossMargin: number;
 
+  // LFD (Last Free Day)
+  availableForPickupDate?: string;
+  lfd?: string; // availableForPickupDate + 4 days
+
   // Notes
   notes: string;
   carrier: string;
@@ -93,9 +97,20 @@ function calcBilling(c: Partial<Container>): Partial<Container> {
   const palletCostVal = +(pallets * RATES.palletCost).toFixed(2);
   const totalCost = +(fernandoTotal + maDrayageCost + maChassisCost + palletCostVal).toFixed(2);
 
+  // LFD calculation: availableForPickupDate + 4 days
+  const availableForPickupDate = c.availableForPickupDate || '';
+  let lfd = c.lfd || '';
+  if (availableForPickupDate && !lfd) {
+    const d = new Date(availableForPickupDate);
+    d.setDate(d.getDate() + 4);
+    lfd = d.toISOString().split('T')[0];
+  }
+
   return {
     ...c,
     pallets,
+    availableForPickupDate,
+    lfd,
     billableCuft: +billableCuft.toFixed(2),
     handlingRevenue: +handlingRevenue.toFixed(2),
     storageRevenue,
