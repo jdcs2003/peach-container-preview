@@ -97,19 +97,24 @@ function calcBilling(c: Partial<Container>): Partial<Container> {
   const palletCostVal = +(pallets * RATES.palletCost).toFixed(2);
   const totalCost = +(fernandoTotal + maDrayageCost + maChassisCost + palletCostVal).toFixed(2);
 
-  // LFD calculation: availableForPickupDate + 4 days
-  const availableForPickupDate = c.availableForPickupDate || '';
-  let lfd = c.lfd || '';
-  if (availableForPickupDate && !lfd) {
-    const d = new Date(availableForPickupDate);
-    d.setDate(d.getDate() + 4);
-    lfd = d.toISOString().split('T')[0];
+  // LFD calculation: ETA + 4 days free time
+  // Only relevant for containers not yet unloaded
+  const PRE_UNLOAD_STATUSES = ['pending', 'on-the-water', 'available-for-pickup', 'in-transit'];
+  const isPreUnload = PRE_UNLOAD_STATUSES.includes(c.status || '');
+  let lfd = '';
+  if (c.eta && isPreUnload) {
+    try {
+      const d = new Date(c.eta);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 4);
+        lfd = d.toISOString().split('T')[0];
+      }
+    } catch { /* ignore bad dates */ }
   }
 
   return {
     ...c,
     pallets,
-    availableForPickupDate,
     lfd,
     billableCuft: +billableCuft.toFixed(2),
     handlingRevenue: +handlingRevenue.toFixed(2),

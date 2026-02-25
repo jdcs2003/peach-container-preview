@@ -441,15 +441,9 @@ class Store {
       }
     }
 
-    // For available-for-pickup, set the date and calculate LFD (+4 days)
-    if (newStatus === "available-for-pickup" || newStatus === "returned-to-pier") {
-      if (!c.availableForPickupDate || newStatus === "available-for-pickup") {
-        const avDate = opts?.availableDate || new Date().toISOString().split("T")[0];
-        updates.availableForPickupDate = avDate;
-        const lfdDate = new Date(avDate);
-        lfdDate.setDate(lfdDate.getDate() + 4);
-        updates.lfd = lfdDate.toISOString().split("T")[0];
-      }
+    // Store available-for-pickup date if provided (optional)
+    if (opts?.availableDate) {
+      updates.availableForPickupDate = opts.availableDate;
     }
 
     return this.updateContainer(id, updates);

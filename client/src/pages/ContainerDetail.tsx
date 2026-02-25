@@ -128,7 +128,8 @@ export default function ContainerDetail() {
         }
       }
       if (form.status === "available-for-pickup" || form.status === "returned-to-pier") {
-        availableDate = prompt("Enter date available for pick-up (YYYY-MM-DD):", new Date().toISOString().split("T")[0]) || new Date().toISOString().split("T")[0];
+        const input = prompt("Enter date available for pick-up (YYYY-MM-DD) — or Cancel to skip:", new Date().toISOString().split("T")[0]);
+        availableDate = input || undefined; // skip if cancelled or empty
       }
       store.changeStatus(c.container, form.status as any, { unloadDate, availableDate });
     }
